@@ -30,6 +30,7 @@ It is built for a small group of people the owner knows. Anyone can quiz without
 | Session length | User picks 10 / **20 (default)** / 50 / all in range, or endless; fixed-length sessions end with a summary |
 | Anonymous progress | Kept on the device only (needed for weighted and SRS modes); **not** merged into an account on sign-in |
 | Signed-in extras | Per-word stats, session history, saved settings, starred list, all synced and kept **per language** |
+| Per-direction tracking | Got it / Missed history is kept separately for each direction (foreign → English vs English → foreign) (§6.2) |
 | Extras | Text-to-speech, installable PWA + offline, desktop keyboard shortcuts, browse/search the word list |
 | Text-to-speech | Browser Web Speech API. Spanish uses a Latin American voice (`es-MX`, falling back to `es-US`, then any `es`); German uses `de-DE` |
 | Sign-in email | Supabase email template changed to neutral wording that works for both apps |
@@ -84,7 +85,7 @@ The real word lists come from a third-party course, so the repo is public but th
 ### 4.1 Anonymous use
 Everything in the quiz works without signing in. Device-only storage (localStorage, wrapped in try/catch) holds:
 - the last language and session settings,
-- per-word stats for the weighted and SRS modes.
+- per-word stats for the weighted and SRS modes, kept per direction (§6.2).
 
 If storage is unavailable (e.g. a private window), the app still works with defaults and without per-word history.
 
@@ -116,6 +117,7 @@ fc_settings (
 fc_word_stats (
   user_id uuid references auth.users(id) on delete cascade,
   card_id text,                        -- 'es:1:quieres'
+  direction text check (direction in ('forward', 'reverse')),  -- forward = foreign word shown
   language text not null,
   seen int not null default 0,
   correct int not null default 0,
@@ -124,7 +126,14 @@ fc_word_stats (
   box smallint not null default 0,     -- Leitner box 0–5
   due_at timestamptz,                  -- SRS next review
   last_seen_at timestamptz,
-  starred boolean not null default false,
+  primary key (user_id, card_id, direction)
+)
+
+fc_starred (
+  user_id uuid references auth.users(id) on delete cascade,
+  card_id text,
+  language text not null,
+  starred_at timestamptz not null default now(),
   primary key (user_id, card_id)
 )
 
@@ -158,7 +167,15 @@ fc_sessions (
 
 Settings are remembered per language: in the account when signed in, otherwise on the device.
 
-### 6.2 Selection modes
+### 6.2 Per-direction tracking
+Got it / Missed results are tracked **separately for each direction** (decided 2026-10-24). Knowing that *encantada* means "nice to meet you" is a different skill from producing *encantada* when shown "nice to meet you".
+- Every per-word record is keyed by card **and** direction: `forward` (foreign word shown) or `reverse` (English shown). That covers seen, correct, missed, streak, Leitner box and due date. It applies on the device (anonymous) and in the account (signed in).
+- A **Mixed** session records each card under the direction it was actually shown in.
+- Weighted and SRS modes read the stats for the direction being quizzed. In a Mixed session, each card's direction is picked first, then that direction's stats decide how likely the card is or whether it's due.
+- **Starred** words are per word, not per direction: one star covers both.
+- Progress views (most-missed words, accuracy) show the two directions separately. A Mixed session's summary also splits its score by direction.
+
+### 6.3 Selection modes
 - **Shuffled deck:** a Fisher–Yates shuffle of all cards in range. Each card appears once before any repeats; the deck reshuffles when exhausted (endless mode).
 - **Random:** uniform random from the cards in range. Never the same card twice in a row.
 - **Weighted toward misses:** weight = `1 + 4 × missed / max(seen, 1)`, plus a bonus of `+1` for unseen cards. Never the same card twice in a row.
@@ -166,7 +183,7 @@ Settings are remembered per language: in the account when signed in, otherwise o
 
 Fixed lengths cap the number of cards shown. "All in range" equals the deck size; in SRS mode it means all due cards plus unseen ones.
 
-### 6.3 Card
+### 6.4 Card
 - **Front:** the prompt word (foreign or English, depending on direction), a speaker button when the foreign word is on that side, a star button (signed in), and progress ("7 / 20" and the current score).
 - **Tap, Space, or a Flip button** reveals the back, which shows:
   - the answer in large type,
@@ -176,10 +193,10 @@ Fixed lengths cap the number of cards shown. "All in range" equals the deck size
 - **Grade:** **Missed** / **Got it** buttons appear only after the flip. Grading advances to the next card.
 - **Undo** last grade (one level), in case of a mis-tap.
 
-### 6.4 Session summary
+### 6.5 Session summary
 Fixed-length sessions end on a summary: score, percentage, the list of missed words (with translations and speaker buttons), and buttons for **Drill missed words**, **Same settings again**, and **Change settings**. Endless sessions show the same summary when you press **End**.
 
-### 6.5 Keyboard shortcuts (desktop)
+### 6.6 Keyboard shortcuts (desktop)
 `Space`/`Enter` flip · `→` or `G` Got it · `←` or `M` Missed · `S` speak · `*` star · `Z` undo · `Esc` end session.
 
 ---
@@ -209,7 +226,7 @@ Fixed-length sessions end on a summary: score, percentage, the list of missed wo
 - A language's CSV changes while a user has stats: matching card IDs keep their stats; others start fresh (§3.3).
 - A language is removed from `data/`: its stats stay in the database but the language disappears from the picker.
 - The same email is used on several devices at once: stats use last-write-wins per card, with counters merged by taking the larger `seen`/`correct`/`missed` values, so concurrent sessions don't lose counts.
-- Very long full translations are clamped on the card (§6.3).
+- Very long full translations are clamped on the card (§6.4).
 
 ---
 
