@@ -11,7 +11,8 @@ import { Link, useNavigate, useParams } from 'react-router'
 import type { QuizState } from '../quiz/QuizPage'
 
 const MOST_MISSED = 15
-const SESSIONS_SHOWN = 30
+const SESSIONS_COLLAPSED = 3
+const SESSIONS_EXPANDED = 10
 const panel = 'flex flex-col rounded-[18px] bg-surface p-4 shadow-[0_1px_2px_rgba(22,33,58,0.08)]'
 
 export function ProgressPage() {
@@ -44,6 +45,7 @@ function Progress({ language }: { language: Language }) {
   const [reload, setReload] = useState(0)
   const [direction, setDirection] = useState<StatDirection>('forward')
   const [confirmReset, setConfirmReset] = useState(false)
+  const [sessionsExpanded, setSessionsExpanded] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -55,7 +57,7 @@ function Progress({ language }: { language: Language }) {
           .select('*')
           .eq('language', info.code)
           .order('ended_at', { ascending: false })
-          .limit(SESSIONS_SHOWN)
+          .limit(SESSIONS_EXPANDED)
         if (error) throw error
         if (live) setData({ stats, sessions: sessions as SessionRecord[] })
       } catch (e) {
@@ -114,6 +116,8 @@ function Progress({ language }: { language: Language }) {
   if ('error' in data) {
     return <Status action={<button type="button" className="font-bold underline" onClick={() => setReload((r) => r + 1)}>Try again</button>}>{data.error}</Status>
   }
+
+  const shownSessions = sessionsExpanded ? data.sessions : data.sessions.slice(0, SESSIONS_COLLAPSED)
 
   return (
     <Page>
@@ -194,31 +198,44 @@ function Progress({ language }: { language: Language }) {
           {data.sessions.length === 0 ? (
             <p className="m-0 py-2 text-muted">Finished sessions will show up here.</p>
           ) : (
-            <ul className="m-0 mt-1 list-none p-0">
-              {data.sessions.map((r, i) => {
-                const pct = r.shown ? Math.round((r.correct / r.shown) * 100) : 0
-                return (
-                  <li key={r.id} className={`flex items-center gap-3 py-2.5 ${i < data.sessions.length - 1 ? 'border-b border-track' : ''}`}>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="font-bold">
-                        {new Date(r.ended_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ·{' '}
-                        {r.selection === 'drill' ? 'Drill' : `Levels ${r.min_level}–${r.max_level}`}
+            <>
+              <ul id="recent-sessions" className="m-0 mt-1 list-none p-0">
+                {shownSessions.map((r, i) => {
+                  const pct = r.shown ? Math.round((r.correct / r.shown) * 100) : 0
+                  return (
+                    <li key={r.id} className={`flex items-center gap-3 py-2.5 ${i < shownSessions.length - 1 ? 'border-b border-track' : ''}`}>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="font-bold">
+                          {new Date(r.ended_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ·{' '}
+                          {r.selection === 'drill' ? 'Drill' : `Levels ${r.min_level}–${r.max_level}`}
+                        </span>
+                        <span className="text-sm text-muted">
+                          {labels[r.direction as keyof typeof labels] ?? r.direction} · {r.correct}/{r.shown}
+                        </span>
                       </span>
-                      <span className="text-sm text-muted">
-                        {labels[r.direction as keyof typeof labels] ?? r.direction} · {r.correct}/{r.shown}
+                      {/* Inline bar: accuracy at a glance down the list. */}
+                      <span className="flex w-24 shrink-0 items-center gap-2" aria-label={`${pct}% correct`}>
+                        <span className="h-2 flex-1 overflow-hidden rounded-full bg-track">
+                          <span className="block h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
+                        </span>
+                        <span className="w-9 text-right text-sm font-bold">{pct}%</span>
                       </span>
-                    </span>
-                    {/* Inline bar: accuracy at a glance down the list. */}
-                    <span className="flex w-24 shrink-0 items-center gap-2" aria-label={`${pct}% correct`}>
-                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-track">
-                        <span className="block h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
-                      </span>
-                      <span className="w-9 text-right text-sm font-bold">{pct}%</span>
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
+                    </li>
+                  )
+                })}
+              </ul>
+              {data.sessions.length > SESSIONS_COLLAPSED && (
+                <button
+                  type="button"
+                  aria-expanded={sessionsExpanded}
+                  aria-controls="recent-sessions"
+                  onClick={() => setSessionsExpanded((x) => !x)}
+                  className="mt-2 h-11 self-start text-[15px] font-bold text-ink underline"
+                >
+                  {sessionsExpanded ? 'Show fewer' : `Show ${data.sessions.length - SESSIONS_COLLAPSED} more`}
+                </button>
+              )}
+            </>
           )}
         </section>
 
