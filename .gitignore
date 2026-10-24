@@ -11,3 +11,6 @@ dist
 # Only the original sample list under data/sample/ is tracked.
 data/*.csv
 public/data/
+
+.vercel
+.env*

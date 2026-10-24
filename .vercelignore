@@ -5,3 +5,4 @@ dist
 .git
 .vercel
 public/data
+.env*
