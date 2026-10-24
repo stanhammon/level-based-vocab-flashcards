@@ -11,6 +11,7 @@ import {
   type Shown,
 } from '@/lib/selection'
 import { loadSettings, type SessionSettings } from '@/lib/settings'
+import { answerSize, frontSize, recapSize } from '@/lib/fit'
 import { speak, useVoice } from '@/lib/speech'
 import { applyGrade, statKey, type GradeEvent, type Stat, type StatDirection } from '@/lib/stats'
 import { useLanguage, type Language } from '@/lib/words'
@@ -498,9 +499,7 @@ function FlipCard({
             </span>
             <span
               lang={promptLang}
-              className={`text-center font-display leading-[1.08] font-extrabold tracking-tight break-words ${
-                prompt.length > 28 ? 'text-3xl' : 'text-5xl'
-              }`}
+              className={`max-w-full text-center font-display leading-[1.08] font-extrabold tracking-tight break-words hyphens-auto ${frontSize(prompt)}`}
             >
               {prompt}
             </span>
@@ -512,16 +511,14 @@ function FlipCard({
           {topRow(flipped, true)}
           <div
             lang={promptLang}
-            className="border-b-[1.5px] border-dashed border-track pb-3.5 font-display text-[26px] font-bold break-words"
+            className={`border-b-[1.5px] border-dashed border-track pb-3.5 font-display font-bold break-words hyphens-auto ${recapSize(prompt)}`}
           >
             {prompt}
           </div>
           <div className="flex min-h-0 flex-1 flex-col justify-center gap-4.5 overflow-y-auto">
             <p
               lang={answerLang}
-              className={`m-0 font-display leading-[1.12] font-extrabold tracking-tight break-words ${
-                answer.length > 60 ? 'text-2xl' : 'text-[34px]'
-              }`}
+              className={`m-0 font-display leading-[1.12] font-extrabold tracking-tight break-words hyphens-auto ${answerSize(answer)}`}
             >
               {answer}
             </p>
