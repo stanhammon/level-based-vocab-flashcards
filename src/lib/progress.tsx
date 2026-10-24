@@ -26,6 +26,9 @@ const BATCH_MAX = 200
 const PAGE = 1000
 
 const localStatsKey = (lang: string) => `stats:${lang}`
+// Offline copies of account data (SPEC §8), removed on sign-out.
+const acctStatsKey = (uid: string, lang: string) => `acct:stats:${uid}:${lang}`
+const acctStarredKey = (uid: string, lang: string) => `acct:starred:${uid}:${lang}`
 const pendingKey = (uid: string) => `pending:${uid}`
 
 function recordLocally(events: GradeEvent[]) {
@@ -51,6 +54,34 @@ interface StatRow {
   box: number
   due_at: string | null
   last_seen_at: string | null
+}
+
+/** Every per-word stat row for one language in the signed-in account (paged). */
+async function fetchAccountStats(language: string): Promise<Map<string, Stat>> {
+  const out = new Map<string, Stat>()
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('fc_word_stats')
+      .select('card_id, direction, seen, correct, missed, streak, box, due_at, last_seen_at')
+      .eq('language', language)
+      .order('card_id')
+      .order('direction')
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    for (const r of data as StatRow[]) {
+      out.set(statKey(r.card_id, r.direction), {
+        seen: r.seen,
+        correct: r.correct,
+        missed: r.missed,
+        streak: r.streak,
+        box: r.box,
+        dueAt: r.due_at ? Date.parse(r.due_at) : 0,
+        lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : 0,
+      })
+    }
+    if (data.length < PAGE) break
+  }
+  return out
 }
 
 export function ProgressProvider({ children }: { children: ReactNode }) {
@@ -143,7 +174,14 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     writeQueue(userId, readQueue(userId))
     void flush()
     const timer = setInterval(() => void flush(), FLUSH_MS)
-    const onHide = () => document.visibilityState === 'hidden' && void flush()
+    const onHide = () => {
+      if (document.visibilityState !== 'hidden') return
+      void flush()
+      // Keep the offline copy of results current with this session's grades.
+      if (statsCache.current.uid === userId) {
+        for (const [lang, { stats }] of statsCache.current.byLang) save(acctStatsKey(userId, lang), Object.fromEntries(stats))
+      }
+    }
     const onOnline = () => void flush()
     document.addEventListener('visibilitychange', onHide)
     window.addEventListener('online', onOnline)
@@ -230,34 +268,31 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       const cached = statsCache.current.byLang.get(language)
       if (cached && Date.now() - cached.at < STATS_TTL_MS) return new Map(cached.stats)
       await flush()
-      const out = new Map<string, Stat>()
-      for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase
-          .from('fc_word_stats')
-          .select('card_id, direction, seen, correct, missed, streak, box, due_at, last_seen_at')
-          .eq('language', language)
-          .order('card_id')
-          .order('direction')
-          .range(from, from + PAGE - 1)
-        if (error) throw error
-        for (const r of data as StatRow[]) {
-          out.set(statKey(r.card_id, r.direction), {
-            seen: r.seen,
-            correct: r.correct,
-            missed: r.missed,
-            streak: r.streak,
-            box: r.box,
-            dueAt: r.due_at ? Date.parse(r.due_at) : 0,
-            lastSeenAt: r.last_seen_at ? Date.parse(r.last_seen_at) : 0,
-          })
+      let out: Map<string, Stat>
+      try {
+        out = await fetchAccountStats(language)
+      } catch (e) {
+        // Offline: last saved copy plus grades still waiting to upload.
+        const saved = load<Record<string, Stat> | null>(acctStatsKey(userId, language), null)
+        if (!saved) throw e
+        out = new Map(Object.entries(saved))
+        for (const p of readQueue(userId)) {
+          if (p.kind !== 'grades') continue
+          for (const g of p.events) {
+            if (g.language !== language) continue
+            const k = statKey(g.cardId, g.direction)
+            out.set(k, applyGrade(out.get(k), g.got, g.at))
+          }
         }
-        if (data.length < PAGE) break
+        return out
       }
+      save(acctStatsKey(userId, language), Object.fromEntries(out))
       if (statsCache.current.uid === userId) statsCache.current.byLang.set(language, { at: Date.now(), stats: out })
       return new Map(out)
     },
-    [userId, flush],
+    [userId, flush, readQueue],
   )
+
 
   // ---- starred ------------------------------------------------------------------
   const loadingStars = useRef<{ uid: string | null; langs: Set<string> }>({ uid: null, langs: new Set() })
@@ -269,19 +304,24 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       const loading = loadingStars.current.langs
       if (loading.has(language)) return
       loading.add(language)
+      const setFor = (ids: Set<string>) =>
+        setStarredState((s) => ({ uid: userId, byLang: { ...(s.uid === userId ? s.byLang : {}), [language]: ids } }))
+      // Show the offline copy straight away; the fetch below replaces it.
+      const saved = load<string[] | null>(acctStarredKey(userId, language), null)
+      if (saved) setFor(new Set(saved))
       void supabase
         .from('fc_starred')
         .select('card_id')
         .eq('language', language)
         .then(({ data, error }) => {
           if (error) {
-            loading.delete(language)
+            // Offline with an offline copy: keep it. Otherwise retry next time.
+            if (!saved) loading.delete(language)
             return
           }
-          setStarredState((s) => ({
-            uid: userId,
-            byLang: { ...(s.uid === userId ? s.byLang : {}), [language]: new Set(data.map((r) => r.card_id as string)) },
-          }))
+          const ids = data.map((r) => r.card_id as string)
+          save(acctStarredKey(userId, language), ids)
+          setFor(new Set(ids))
         })
     },
     [userId],
@@ -297,6 +337,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
           const next = new Set(byLang[language] ?? [])
           if (on) next.add(cardId)
           else next.delete(cardId)
+          save(acctStarredKey(userId, language), [...next])
           return { uid: userId, byLang: { ...byLang, [language]: next } }
         })
       apply(!was)

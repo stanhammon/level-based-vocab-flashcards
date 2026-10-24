@@ -1,6 +1,8 @@
 import { btnAccent, btnPrimary } from '@/components/styles'
+import { SpeakerIcon } from '@/components/ui'
 import { directionLabels } from '@/lib/labels'
 import { useProgress } from '@/lib/progressContext'
+import { speak, useVoice } from '@/lib/speech'
 import type { SessionSettings } from '@/lib/settings'
 import type { Language } from '@/lib/words'
 import { Link, useNavigate } from 'react-router'
@@ -23,6 +25,7 @@ export function Summary({
   const navigate = useNavigate()
   const { userId } = useProgress()
   const { info } = language
+  const voice = useVoice(info.tts)
   const total = results.length
   const got = results.filter((r) => r.got).length
   const pct = total ? Math.round((got / total) * 100) : 0
@@ -82,13 +85,25 @@ export function Summary({
           <h2 className="mt-2.5 mb-1 text-[15px] font-bold tracking-[0.8px] text-muted uppercase">Missed words</h2>
           <ul className="m-0 list-none p-0">
             {missed.map((c, i) => (
-              <li key={c.id} className={`flex flex-col gap-0.5 py-2.5 ${i < missed.length - 1 ? 'border-b border-track' : ''}`}>
-                <span lang={info.code} className="font-display text-[19px] font-bold">
-                  {c.word}
+              <li key={c.id} className={`flex items-center gap-2.5 py-2.5 ${i < missed.length - 1 ? 'border-b border-track' : ''}`}>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span lang={info.code} className="font-display text-[19px] font-bold break-words">
+                    {c.word}
+                  </span>
+                  <span className="text-[15px] text-muted">
+                    {c.short} · L{c.level}
+                  </span>
                 </span>
-                <span className="text-[15px] text-muted">
-                  {c.short} · L{c.level}
-                </span>
+                {voice && (
+                  <button
+                    type="button"
+                    onClick={() => speak(c.word, voice)}
+                    aria-label={`Hear “${c.word}”`}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-full bg-chip text-ink"
+                  >
+                    <SpeakerIcon size={20} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>

@@ -9,6 +9,7 @@ import { SetupPage } from './features/setup/SetupPage'
 import './index.css'
 import { AuthProvider } from './lib/auth'
 import { ProgressProvider } from './lib/progress'
+import { startPwa } from './lib/pwa'
 
 const router = createBrowserRouter([
   { path: '/', element: <HomeRedirect /> },
@@ -19,6 +20,8 @@ const router = createBrowserRouter([
   { path: '/:lang/progress', element: <ProgressPage /> },
   { path: '*', element: <Navigate to="/" replace /> },
 ])
+
+startPwa()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

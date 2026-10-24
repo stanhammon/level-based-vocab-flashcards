@@ -1,5 +1,8 @@
 import type { ReactNode, SVGProps } from 'react'
 import { useAuth } from '@/lib/authContext'
+import { useProgress } from '@/lib/progressContext'
+import { useOnline } from '@/lib/online'
+import { applyUpdate, useUpdateReady } from '@/lib/pwa'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { Link, useLocation } from 'react-router'
 
@@ -50,6 +53,12 @@ export const StarIcon = ({ filled, ...p }: IconProps & { filled?: boolean }) => 
     <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
   </Svg>
 )
+export const SpeakerIcon = (p: IconProps) => (
+  <Svg strokeWidth={2} {...p}>
+    <path d="M11 5L6 9H3v6h3l5 4z" />
+    <path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13" />
+  </Svg>
+)
 export const UndoIcon = (p: IconProps) => (
   <Svg strokeWidth={2.2} {...p}>
     <path d="M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3" />
@@ -61,6 +70,7 @@ export function Header({ languageName }: { languageName?: string }) {
   const { session } = useAuth()
   const { pathname } = useLocation()
   return (
+    <>
     <header className="flex items-center gap-2 px-5 py-4">
       <Link to="/languages" className="flex items-center gap-2.5 no-underline text-ink" aria-label="Level Vocab home">
         <Logo />
@@ -88,6 +98,37 @@ export function Header({ languageName }: { languageName?: string }) {
         </Link>
       )}
     </header>
+    <Notices />
+    </>
+  )
+}
+
+/** Offline and update notices, shown under the header (never mid-session). */
+function Notices() {
+  const online = useOnline()
+  const updateReady = useUpdateReady()
+  const { userId, pendingCount } = useProgress()
+  if (online && !updateReady) return null
+  return (
+    <div className="mx-5 mb-1 flex flex-col gap-2" role="status">
+      {!online && (
+        <p className="m-0 rounded-xl bg-surface px-3 py-2 text-sm text-muted shadow-[0_1px_2px_rgba(22,33,58,0.08)]">
+          <strong className="text-ink">Offline.</strong> You can keep quizzing.
+          {userId &&
+            (pendingCount > 0
+              ? ` ${pendingCount} ${pendingCount === 1 ? 'result' : 'results'} will sync when you reconnect.`
+              : ' Results sync when you reconnect.')}
+        </p>
+      )}
+      {updateReady && (
+        <p className="m-0 flex items-center justify-between gap-3 rounded-xl bg-good-soft px-3 py-2 text-sm text-good-soft-ink">
+          A new version is ready.
+          <button type="button" onClick={applyUpdate} className="h-9 shrink-0 rounded-lg bg-good px-3 font-bold text-good-ink">
+            Update
+          </button>
+        </p>
+      )}
+    </div>
   )
 }
 

@@ -31,7 +31,7 @@ It is built for a small group of people the owner knows. Anyone can quiz without
 | Anonymous progress | Kept on the device only (needed for weighted and SRS modes); **not** merged into an account on sign-in |
 | Signed-in extras | Per-word stats, session history, saved settings, starred list, all synced and kept **per language** |
 | Per-direction tracking | Got it / Missed history is kept separately for each direction (foreign → English vs English → foreign) (§6.2) |
-| Extras | Text-to-speech, installable PWA + offline, desktop keyboard shortcuts, browse/search the word list |
+| Extras | Text-to-speech, installable PWA + offline, desktop keyboard shortcuts. (Browse/search the word list was dropped on 2026-10-24.) |
 | Text-to-speech | Browser Web Speech API. Spanish uses a Latin American voice (`es-MX`, falling back to `es-US`, then any `es`); German uses `de-DE` |
 | Sign-in email | Supabase email template changed to neutral wording that works for both apps |
 | Visual identity | Its own look, distinct from SafeOrder |
@@ -203,7 +203,7 @@ Fixed-length sessions end on a summary: score, percentage, the list of missed wo
 
 ## 7. Other Screens
 
-- **Browse:** the sections of the current language, grouped and searchable. Search covers the foreign word and both translations, and ignores accents and case (e.g. "cafe" matches "café"). Each word row has a speaker button, a star button (signed in), and stats (signed in). A section can be started directly as a quiz (min = max = that section).
+- **Browse** *(dropped 2026-10-24, not planned)*: the sections of the current language, grouped and searchable. Search covers the foreign word and both translations, and ignores accents and case (e.g. "cafe" matches "café"). Each word row has a speaker button, a star button (signed in), and stats (signed in). A section can be started directly as a quiz (min = max = that section).
 - **Progress** (signed in): session history, accuracy over time, most-missed words, and the starred list, each filtered to the current language. Starred words can be drilled from here.
 - **Account:** sign in/out, current email, and a "Reset progress for <language>" action (with confirmation).
 
@@ -232,6 +232,7 @@ Fixed-length sessions end on a summary: score, percentage, the list of missed wo
 
 ## 10. Non-Goals (v1)
 
+- Browsing or searching the word list in the app.
 - Typed answers or multiple choice (answer mode is flip and self-grade only).
 - In-app CSV upload or editing words in the app.
 - User-added personal cards.
@@ -246,7 +247,7 @@ Fixed-length sessions end on a summary: score, percentage, the list of missed wo
 1. **Core quiz (anonymous):** scaffold, visual direction, CSV build step with the sample fallback and the guards in §3.4, language picker, level range selector, direction, flip cards, shuffled deck, session lengths and summary, device-stored settings, noindex. Public GitHub repo; deployed to Vercel with the CLI.
 2. **Accounts:** shared-Supabase sign-in, `fc_` tables and RLS, synced settings, per-word stats, session history, starred words, Progress screen, neutral email template.
 3. **Selection modes:** random, weighted toward misses, Leitner SRS, for both device and account storage.
-4. **Extras:** text-to-speech, keyboard shortcuts, Browse/search, PWA install and offline queue.
+4. **Extras:** text-to-speech, keyboard shortcuts, PWA install and offline queue. (Browse/search dropped 2026-10-24.)
 5. **German:** add the German CSV once it is ready (no code changes expected beyond the language config entry).
 
 ---

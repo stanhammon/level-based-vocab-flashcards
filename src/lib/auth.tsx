@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js'
 import { useEffect, useState, type ReactNode } from 'react'
 import { AuthContext } from './authContext'
+import { removeAll } from './storage'
 import { isSupabaseConfigured, supabase } from './supabase'
 
 /**
@@ -63,6 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signOut() {
     await supabase.auth.signOut()
+    // Shared devices: drop the offline copy of this account's results and stars.
+    // Grades still waiting to upload are kept and sent at the next sign-in.
+    removeAll('acct:')
     setSession(null)
   }
 

@@ -28,6 +28,20 @@ export function loadAll<T>(prefix: string): Record<string, T> {
   return out
 }
 
+/** Remove every saved value whose key starts with `prefix`. */
+export function removeAll(prefix: string): void {
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k?.startsWith(PREFIX + prefix)) keys.push(k)
+    }
+    for (const k of keys) localStorage.removeItem(k)
+  } catch {
+    // Storage unavailable.
+  }
+}
+
 export function remove(key: string): void {
   try {
     localStorage.removeItem(PREFIX + key)

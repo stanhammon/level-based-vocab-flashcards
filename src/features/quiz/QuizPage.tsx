@@ -1,4 +1,4 @@
-import { CheckIcon, CloseIcon, LevelTag, MissIcon, StarIcon, Status, UndoIcon } from '@/components/ui'
+import { CheckIcon, CloseIcon, LevelTag, MissIcon, SpeakerIcon, StarIcon, Status, UndoIcon } from '@/components/ui'
 import { inRange, plannedCount, promptIsForeign, refill, startQueue, type Card, type SessionLength } from '@/lib/deck'
 import { useProgress, useStarred } from '@/lib/progressContext'
 import {
@@ -11,6 +11,7 @@ import {
   type Shown,
 } from '@/lib/selection'
 import { loadSettings, type SessionSettings } from '@/lib/settings'
+import { speak, useVoice } from '@/lib/speech'
 import { applyGrade, statKey, type GradeEvent, type Stat, type StatDirection } from '@/lib/stats'
 import { useLanguage, type Language } from '@/lib/words'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -111,6 +112,7 @@ function Quiz({
   const { info } = language
   const { userId, record, saveSession, toggleStar } = useProgress()
   const starred = useStarred(info.code)
+  const voice = useVoice(info.tts)
 
   const [session] = useState(() => {
     const saved: SessionSettings = loadSettings(info)
@@ -275,13 +277,15 @@ function Quiz({
       else if (k === 'arrowleft' || k === 'm') grade(false)
       else if (k === 'z') undo()
       else if (k === '*' && userId && current) toggleStar(info.code, current.card.id)
+      // Speak only when the foreign word is showing, so it never gives away the answer.
+      else if (k === 's' && voice && current && (flipped || current.foreign)) speak(current.card.word, voice)
       else if (k === 'escape') end()
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [done, flipped, grade, undo, end, userId, current, toggleStar, info.code])
+  }, [done, flipped, grade, undo, end, userId, current, toggleStar, info.code, voice])
 
   if (done || !current) {
     if (session.pool.length === 0) {
@@ -365,6 +369,7 @@ function Quiz({
         flipped={flipped}
         onFlip={() => setFlipped(true)}
         star={userId ? { on: starred.has(current.card.id), toggle: () => toggleStar(info.code, current.card.id) } : null}
+        onSpeak={voice ? () => speak(current.card.word, voice) : null}
       />
 
       <div className="flex items-center gap-3">
@@ -420,6 +425,7 @@ function FlipCard({
   flipped,
   onFlip,
   star,
+  onSpeak,
 }: {
   shown: Shown
   languageName: string
@@ -428,6 +434,8 @@ function FlipCard({
   flipped: boolean
   onFlip: () => void
   star: { on: boolean; toggle: () => void } | null
+  /** Says the foreign word; null when no matching voice is installed. */
+  onSpeak: (() => void) | null
 }) {
   const { card, foreign } = shown
   const [more, setMore] = useState(false)
@@ -437,12 +445,28 @@ function FlipCard({
   const promptLang = foreign ? langCode : 'en'
   const answerLang = foreign ? 'en' : langCode
 
-  const topRow = (visible: boolean) => (
-    <div className="flex h-11 w-full items-center justify-between">
-      <span className="flex items-center gap-2 text-sm font-bold text-muted">
+  // The front only offers the speaker when it shows the foreign word.
+  const topRow = (visible: boolean, canSpeak: boolean) => (
+    <div className="flex h-11 w-full items-center gap-1">
+      <span className="flex flex-1 items-center gap-2 text-sm font-bold text-muted">
         <LevelTag level={card.level} />
         {sectionTitle}
       </span>
+      {onSpeak && canSpeak && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onSpeak()
+          }}
+          aria-label={`Hear “${card.word}”`}
+          title="Hear it (S)"
+          tabIndex={visible ? 0 : -1}
+          className="flex size-11 items-center justify-center rounded-full bg-chip text-ink"
+        >
+          <SpeakerIcon size={22} />
+        </button>
+      )}
       {star && (
         <button
           type="button"
@@ -467,7 +491,7 @@ function FlipCard({
       <div className={`flip-inner ${flipped ? 'flipped' : ''}`}>
         {/* Tapping anywhere on the front flips it; keyboard users have the Flip button and Space. */}
         <div onClick={onFlip} className={`${face} cursor-pointer text-ink`} aria-hidden={flipped}>
-          {topRow(!flipped)}
+          {topRow(!flipped, foreign)}
           <div className="flex w-full flex-1 flex-col items-center justify-center gap-2.5 overflow-hidden">
             <span className="text-[13px] font-bold tracking-[1px] text-muted uppercase">
               {foreign ? languageName : 'English'}
@@ -485,7 +509,7 @@ function FlipCard({
         </div>
 
         <div className={`${face} flip-back gap-3.5`} aria-hidden={!flipped} aria-live="polite">
-          {topRow(flipped)}
+          {topRow(flipped, true)}
           <div
             lang={promptLang}
             className="border-b-[1.5px] border-dashed border-track pb-3.5 font-display text-[26px] font-bold break-words"
