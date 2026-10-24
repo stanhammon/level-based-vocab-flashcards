@@ -1,8 +1,17 @@
 import { CheckIcon, CloseIcon, LevelTag, MissIcon, StarIcon, Status, UndoIcon } from '@/components/ui'
 import { inRange, plannedCount, promptIsForeign, refill, startQueue, type Card, type SessionLength } from '@/lib/deck'
 import { useProgress, useStarred } from '@/lib/progressContext'
+import {
+  MAX_RETRIES,
+  pickRandom,
+  pickWeighted,
+  planSrs,
+  retryPosition,
+  type Selection,
+  type Shown,
+} from '@/lib/selection'
 import { loadSettings, type SessionSettings } from '@/lib/settings'
-import type { GradeEvent, StatDirection } from '@/lib/stats'
+import { applyGrade, statKey, type GradeEvent, type Stat, type StatDirection } from '@/lib/stats'
 import { useLanguage, type Language } from '@/lib/words'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
@@ -14,35 +23,64 @@ export interface QuizState {
   drill?: string[]
   /** Quiz in this direction instead of the saved setting (most-missed drills). */
   direction?: StatDirection
+  /** Use this card order instead of the saved setting ("shuffled instead" when nothing is due). */
+  selection?: Selection
 }
+
+/** Modes that need the saved per-word stats before the first card. */
+const needsStats = (s: Selection) => s === 'weighted' || s === 'srs'
 
 export function QuizPage() {
   const { lang } = useParams()
   const location = useLocation()
   const language = useLanguage(lang)
-  const { userId, starred, loadStarred } = useProgress()
+  const { userId, starred, loadStarred, loadStats } = useProgress()
+  const state = location.state as QuizState | null
   const info = language.status === 'ready' ? language.data.info : null
+  const settings = info ? loadSettings(info) : null
   // A starred-only session can't start until the stars have loaded.
-  const needStars = info !== null && userId !== null && loadSettings(info).starredOnly
+  const needStars = !!settings && userId !== null && settings.starredOnly && !state?.drill
+  const selection: Selection = state?.drill ? 'shuffled' : (state?.selection ?? settings?.selection ?? 'shuffled')
   const code = info?.code
 
   useEffect(() => {
     if (needStars && code) loadStarred(code)
   }, [needStars, code, loadStarred])
 
+  const [loaded, setLoaded] = useState<{ key: string; stats: Map<string, Stat> | null } | null>(null)
+  const wantStats = code !== undefined && needsStats(selection)
+  useEffect(() => {
+    if (!wantStats || !code) return
+    let live = true
+    loadStats(code).then(
+      (stats) => live && setLoaded({ key: location.key, stats }),
+      () => live && setLoaded({ key: location.key, stats: null }),
+    )
+    return () => {
+      live = false
+    }
+  }, [wantStats, code, loadStats, location.key])
+
   if (language.status === 'loading') return <Status>Loading words…</Status>
   if (language.status !== 'ready') {
     return <Status action={<Link to="/languages">Pick a language</Link>}>Couldn't load that language.</Status>
   }
   if (needStars && !starred[language.data.info.code]) return <Status>Loading starred words…</Status>
+  const ready = wantStats ? (loaded?.key === location.key ? loaded : null) : { stats: NO_STATS }
+  if (!ready) return <Status>Loading your results…</Status>
+  if (!ready.stats) {
+    return (
+      <Status action={<Link to={`/${language.data.info.code}`}>Back</Link>}>
+        Couldn't load your results, which this card order needs. Check your connection and try again.
+      </Status>
+    )
+  }
   // A new key (from Start, Again or Drill) starts a fresh session.
-  return <Quiz key={location.key} language={language.data} state={location.state as QuizState | null} />
+  return <Quiz key={location.key} language={language.data} state={state} selection={selection} stats={ready.stats} />
 }
 
-export interface Shown {
-  card: Card
-  foreign: boolean
-}
+const NO_STATS = new Map<string, Stat>()
+
 export interface Graded extends Shown {
   got: boolean
   at: number
@@ -56,7 +94,19 @@ const toEvent = (language: string, r: Graded): GradeEvent => ({
   at: r.at,
 })
 
-function Quiz({ language, state }: { language: Language; state: QuizState | null }) {
+const sameShown = (a: Shown, b: Shown) => a.card.id === b.card.id && a.foreign === b.foreign
+
+function Quiz({
+  language,
+  state,
+  selection,
+  stats,
+}: {
+  language: Language
+  state: QuizState | null
+  selection: Selection
+  stats: Map<string, Stat>
+}) {
   const navigate = useNavigate()
   const { info } = language
   const { userId, record, saveSession, toggleStar } = useProgress()
@@ -64,19 +114,55 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
 
   const [session] = useState(() => {
     const saved: SessionSettings = loadSettings(info)
-    const settings = state?.direction ? { ...saved, direction: state.direction } : saved
+    const settings = { ...saved, selection, ...(state?.direction ? { direction: state.direction } : {}) }
     const drill = state?.drill ? new Set(state.drill) : null
     let pool = drill ? language.cards.filter((c) => drill.has(c.id)) : inRange(language.cards, settings.min, settings.max)
     if (!drill && settings.starredOnly && userId) pool = pool.filter((c) => starred.has(c.id))
     const length: SessionLength = drill ? 'all' : settings.length
     return { settings, pool, length, drill: drill !== null, id: crypto.randomUUID(), startedAt: new Date() }
   })
-  const draw = useCallback(
-    (cards: Card[]): Shown[] => cards.map((card) => ({ card, foreign: promptIsForeign(session.settings.direction) })),
-    [session.settings.direction],
+  const { direction } = session.settings
+  const shuffledShown = useCallback(
+    (cards: Card[]): Shown[] => cards.map((card) => ({ card, foreign: promptIsForeign(direction) })),
+    [direction],
   )
 
-  const [queue, setQueue] = useState<Shown[]>(() => draw(startQueue(session.pool, session.length)))
+  /** Stats as of now: saved ones plus this session's grades so far. */
+  const liveStats = useCallback(
+    (graded: Graded[]) => {
+      const live = new Map(stats)
+      for (const r of graded) {
+        const k = statKey(r.card.id, r.foreign ? 'forward' : 'reverse')
+        live.set(k, applyGrade(live.get(k), r.got, r.at))
+      }
+      return live
+    },
+    [stats],
+  )
+
+  const pick = useCallback(
+    (graded: Graded[]): Shown => {
+      const lastId = graded[graded.length - 1]?.card.id
+      return selection === 'weighted'
+        ? pickWeighted(session.pool, direction, liveStats(graded), lastId, Math.random)
+        : pickRandom(session.pool, direction, lastId, Math.random)
+    },
+    [selection, session.pool, direction, liveStats],
+  )
+
+  const [queue, setQueue] = useState<Shown[]>(() => {
+    const { pool, length } = session
+    if (pool.length === 0) return []
+    if (selection === 'random' || selection === 'weighted') return [pick([])]
+    if (selection === 'srs') {
+      const { due, fresh } = planSrs(pool, direction, stats, Date.now(), Math.random)
+      const plan = [...due, ...fresh]
+      return typeof length === 'number' ? plan.slice(0, length) : plan
+    }
+    return shuffledShown(startQueue(pool, length))
+  })
+  // The queue before the last grade, so Undo also takes back a re-queued miss.
+  const [queueBefore, setQueueBefore] = useState<Shown[] | null>(null)
   const [results, setResults] = useState<Graded[]>([])
   const [flipped, setFlipped] = useState(false)
   const [done, setDone] = useState(false)
@@ -106,7 +192,9 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
 
   const index = results.length
   const current = queue[index]
-  const planned = plannedCount(session.pool.length, session.length)
+  // Spaced repetition plans its session up front (plus re-queued misses).
+  const repeats = selection === 'random' || selection === 'weighted'
+  const planned = selection === 'srs' ? queue.length : plannedCount(session.pool.length, session.length, repeats)
   const got = results.filter((r) => r.got).length
 
   const finish = useCallback(
@@ -137,21 +225,37 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
     (ok: boolean) => {
       if (!flipped || !current) return
       const next = [...results, { ...current, got: ok, at: Date.now() }]
+      let q = queue
+      // Spaced repetition: a missed card comes back later in the session.
+      if (selection === 'srs' && !ok && q.filter((s) => sameShown(s, current)).length <= MAX_RETRIES) {
+        const at = retryPosition(next.length - 1, q.length, Math.random)
+        q = [...q.slice(0, at), { card: current.card, foreign: current.foreign }, ...q.slice(at)]
+      }
+      if (next.length >= q.length) {
+        if (selection === 'shuffled' && session.length === 'endless') {
+          q = [...q, ...shuffledShown(refill(session.pool, current.card.id))]
+        } else if ((selection === 'random' || selection === 'weighted') && (planned === null || next.length < planned)) {
+          q = [...q, pick(next)]
+        }
+      }
+      setQueueBefore(queue)
+      setQueue(q)
       setResults(next)
       setFlipped(false)
-      if (next.length >= queue.length && session.length !== 'endless') return finish(next)
+      if (next.length >= q.length) return finish(next)
       saveGrades(next, savedCount, next.length - 1)
-      if (next.length >= queue.length) setQueue((q) => [...q, ...draw(refill(session.pool, current.card.id))])
     },
-    [flipped, current, results, queue.length, session, draw, saveGrades, savedCount, finish],
+    [flipped, current, results, queue, selection, session, planned, pick, shuffledShown, saveGrades, savedCount, finish],
   )
 
   const canUndo = results.length > savedCount
   const undo = useCallback(() => {
     if (results.length <= savedCount) return
     setResults(results.slice(0, -1))
+    if (queueBefore) setQueue(queueBefore)
+    setQueueBefore(null)
     setFlipped(true)
-  }, [results, savedCount])
+  }, [results, savedCount, queueBefore])
 
   const end = useCallback(() => {
     if (results.length > 0) finish(results)
@@ -184,6 +288,31 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
       return (
         <Status action={<Link to={`/${info.code}`}>Change settings</Link>}>
           No words to quiz. With “Starred words only” on, star some words first.
+        </Status>
+      )
+    }
+    if (results.length === 0 && selection === 'srs') {
+      return (
+        <Status
+          action={
+            <div className="flex flex-col items-center gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(`/${info.code}/quiz`, { replace: true, state: { start: Date.now(), selection: 'shuffled' } })
+                }
+                className="h-12 rounded-2xl bg-accent px-5 font-display text-lg font-extrabold text-accent-ink"
+              >
+                Shuffled session instead
+              </button>
+              <Link to={`/${info.code}`} className="font-bold text-ink">
+                Change settings
+              </Link>
+            </div>
+          }
+        >
+          Nothing is due for review in this range, and you've seen every word in it. Come back later, or quiz a shuffled
+          deck now.
         </Status>
       )
     }

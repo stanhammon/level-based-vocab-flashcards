@@ -181,7 +181,7 @@ Got it / Missed results are tracked **separately for each direction** (decided 2
 - **Weighted toward misses:** weight = `1 + 4 × missed / max(seen, 1)`, plus a bonus of `+1` for unseen cards. Never the same card twice in a row.
 - **Spaced repetition (Leitner):** boxes 0–5 with intervals 0 d, 1 d, 3 d, 7 d, 14 d, 30 d. **Got it** moves a card up one box; **Missed** resets it to box 0, and the card is shown again later in the same session. A session shows due cards first (most overdue first), then fills with unseen cards in section order. When nothing is due and no unseen cards remain, the app says "Nothing due in this range" and offers a shuffled session instead.
 
-Fixed lengths cap the number of cards shown. "All in range" equals the deck size; in SRS mode it means all due cards plus unseen ones.
+Fixed lengths cap the number of cards shown. In Shuffled mode a fixed length is also capped at the words in range; Random and Weighted repeat words, so a 50-card session shows 50 cards even with fewer words in range. "All in range" equals the deck size; in SRS mode it means all due cards plus unseen ones, and missed cards come back up to 3 times, 3–5 cards later.
 
 ### 6.4 Card
 - **Front:** the prompt word (foreign or English, depending on direction), a speaker button when the foreign word is on that side, a star button (signed in), and progress ("7 / 20" and the current score).

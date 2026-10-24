@@ -3,7 +3,9 @@ import { ChevronDown, Header, Page, SectionLabel, Status } from '@/components/ui
 import { inRange, plannedCount } from '@/lib/deck'
 import { directionLabels } from '@/lib/labels'
 import { useProgress, useStarred } from '@/lib/progressContext'
+import { SELECTIONS, type Selection } from '@/lib/selection'
 import { LENGTH_CHOICES, loadSettings, saveLastLanguage, saveSettings, type SessionSettings } from '@/lib/settings'
+import { statKey, type Stat, type StatDirection } from '@/lib/stats'
 import { useLanguage, type Language } from '@/lib/words'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
@@ -42,7 +44,53 @@ function Setup({ language }: { language: Language }) {
   const starredInRange = useMemo(() => ranged.filter((c) => starred.has(c.id)).length, [ranged, starred])
   const starredOnly = s.starredOnly && userId !== null
   const available = starredOnly ? starredInRange : ranged.length
-  const planned = plannedCount(available, s.length)
+
+  // Spaced repetition: show what's due before starting (SPEC §6.3).
+  const { loadStats } = useProgress()
+  // `at` is when they loaded: "due" is judged as of then.
+  const [stats, setStats] = useState<{ map: Map<string, Stat>; at: number } | null>(null)
+  useEffect(() => {
+    if (s.selection !== 'srs') return
+    let live = true
+    loadStats(info.code).then(
+      (map) => live && setStats({ map, at: Date.now() }),
+      () => live && setStats({ map: new Map(), at: Date.now() }),
+    )
+    return () => {
+      live = false
+    }
+  }, [s.selection, loadStats, info.code])
+  const srs = useMemo(() => {
+    if (s.selection !== 'srs' || !stats) return null
+    const pool = starredOnly ? ranged.filter((c) => starred.has(c.id)) : ranged
+    const { map, at: now } = stats
+    const count = (d: StatDirection) => {
+      let due = 0
+      let fresh = 0
+      for (const c of pool) {
+        const st = map.get(statKey(c.id, d))
+        if (!st) fresh++
+        else if (st.dueAt <= now) due++
+      }
+      return { due, fresh }
+    }
+    if (s.direction !== 'mixed') return { ...count(s.direction), approx: false }
+    // Mixed picks each card's direction at random, so the split is an estimate.
+    const f = count('forward')
+    const r = count('reverse')
+    return { due: Math.round((f.due + r.due) / 2), fresh: Math.round((f.fresh + r.fresh) / 2), approx: true }
+  }, [s.selection, s.direction, stats, ranged, starred, starredOnly])
+
+  const srsTotal = srs ? srs.due + srs.fresh : null
+  const planned =
+    srsTotal !== null
+      ? typeof s.length === 'number'
+        ? Math.min(s.length, srsTotal)
+        : srsTotal
+      : plannedCount(available, s.length, s.selection === 'random' || s.selection === 'weighted')
+  const nothingDue = srsTotal === 0 && available > 0
+  const start = (selection?: Selection) =>
+    navigate(`/${info.code}/quiz`, { state: { start: Date.now(), ...(selection ? { selection } : {}) } })
   const labels = directionLabels(info.code)
 
   return (
@@ -120,16 +168,26 @@ function Setup({ language }: { language: Language }) {
             <select
               id="order"
               value={s.selection}
-              onChange={() => update({ selection: 'shuffled' })}
+              onChange={(e) => update({ selection: e.target.value as Selection })}
+              aria-describedby="order-hint"
               className="h-12 w-full appearance-none rounded-xl border-[1.5px] border-line bg-surface px-3.5 text-base text-ink"
             >
-              <option value="shuffled">Shuffled deck — no repeats</option>
-              <option disabled>Random (coming soon)</option>
-              <option disabled>Weighted toward misses (coming soon)</option>
-              <option disabled>Spaced repetition (coming soon)</option>
+              {SELECTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
             <ChevronDown size={16} className="pointer-events-none absolute top-4 right-3.5" />
           </div>
+          <p id="order-hint" className="m-0 text-sm text-muted" aria-live="polite">
+            {SELECTIONS.find((o) => o.value === s.selection)?.hint}
+            {s.selection === 'srs' &&
+              (srs
+                ? ` ${srs.approx ? 'About ' : ''}${srs.due.toLocaleString()} due now · ${srs.fresh.toLocaleString()} new in this range.`
+                : ' Checking what’s due…')}
+            {!userId && (s.selection === 'weighted' || s.selection === 'srs') && ' Uses results saved on this device.'}
+          </p>
         </section>
 
         <section className="flex flex-col gap-2">
@@ -143,24 +201,35 @@ function Setup({ language }: { language: Language }) {
                 onClick={() => update({ length: len })}
                 className={pill(s.length === len)}
               >
-                {len === 'all' ? `All ${available.toLocaleString()}` : len === 'endless' ? 'Endless' : len}
+                {len === 'all'
+                  ? `All ${(srsTotal ?? available).toLocaleString()}`
+                  : len === 'endless'
+                    ? 'Endless'
+                    : len}
               </button>
             ))}
           </div>
         </section>
 
         <div className="flex-1" />
+        {nothingDue && (
+          <button type="button" onClick={() => start('shuffled')} className="h-12 font-bold text-ink underline">
+            Nothing due here. Start a shuffled session instead
+          </button>
+        )}
         <button
           type="button"
-          disabled={available === 0}
-          onClick={() => navigate(`/${info.code}/quiz`, { state: { start: Date.now() } })}
+          disabled={available === 0 || nothingDue || (s.selection === 'srs' && !srs)}
+          onClick={() => start()}
           className={btnAccent}
         >
           {available === 0
             ? 'No words in this range'
-            : planned === null
-              ? 'Start · endless'
-              : `Start · ${planned.toLocaleString()} ${planned === 1 ? 'card' : 'cards'}`}
+            : nothingDue
+              ? 'Nothing due for review'
+              : planned === null
+                ? 'Start · endless'
+                : `Start · ${planned.toLocaleString()} ${planned === 1 ? 'card' : 'cards'}`}
         </button>
       </main>
     </Page>

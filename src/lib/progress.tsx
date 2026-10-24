@@ -20,6 +20,8 @@ type Pending =
   | { kind: 'session'; row: SessionRecord }
 
 const FLUSH_MS = 4000
+/** Account stats are refetched after this long, to pick up other devices. */
+const STATS_TTL_MS = 120_000
 const BATCH_MAX = 200
 const PAGE = 1000
 
@@ -72,6 +74,11 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   // Uploading settings before the account's copy has loaded would overwrite it.
   const settingsLoaded = useRef(false)
   const flushing = useRef(false)
+  // Account stats per language, kept current with this device's grades.
+  const statsCache = useRef<{ uid: string | null; byLang: Map<string, { at: number; stats: Map<string, Stat> }> }>({
+    uid: null,
+    byLang: new Map(),
+  })
 
   // ---- upload queue ----------------------------------------------------------
   const readQueue = useCallback((uid: string) => load<Pending[]>(pendingKey(uid), []), [])
@@ -151,6 +158,13 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     (events: GradeEvent[]) => {
       if (events.length === 0) return
       if (!userId) return recordLocally(events)
+      if (statsCache.current.uid === userId) {
+        for (const e of events) {
+          const stats = statsCache.current.byLang.get(e.language)?.stats
+          const k = statKey(e.cardId, e.direction)
+          if (stats) stats.set(k, applyGrade(stats.get(k), e.got, e.at))
+        }
+      }
       enqueue({ kind: 'grades', batchId: crypto.randomUUID(), events })
     },
     [userId, enqueue],
@@ -212,6 +226,9 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const loadStats = useCallback(
     async (language: string): Promise<Map<string, Stat>> => {
       if (!userId) return new Map(Object.entries(load<Record<string, Stat>>(localStatsKey(language), {})))
+      if (statsCache.current.uid !== userId) statsCache.current = { uid: userId, byLang: new Map() }
+      const cached = statsCache.current.byLang.get(language)
+      if (cached && Date.now() - cached.at < STATS_TTL_MS) return new Map(cached.stats)
       await flush()
       const out = new Map<string, Stat>()
       for (let from = 0; ; from += PAGE) {
@@ -236,7 +253,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         }
         if (data.length < PAGE) break
       }
-      return out
+      if (statsCache.current.uid === userId) statsCache.current.byLang.set(language, { at: Date.now(), stats: out })
+      return new Map(out)
     },
     [userId, flush],
   )
@@ -298,6 +316,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         return
       }
       await flush()
+      statsCache.current.byLang.delete(language)
       const a = await supabase.from('fc_word_stats').delete().eq('language', language)
       if (a.error) throw a.error
       const b = await supabase.from('fc_sessions').delete().eq('language', language)

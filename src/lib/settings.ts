@@ -1,9 +1,7 @@
 import type { Direction, SessionLength } from './deck'
+import { SELECTIONS, type Selection } from './selection'
 import { load, save } from './storage'
 import type { LanguageInfo } from './wordData'
-
-/** Card order (SPEC §6.2). Only the shuffled deck exists until Milestone 3. */
-export type Selection = 'shuffled'
 
 export interface SessionSettings {
   min: number
@@ -39,7 +37,7 @@ export function loadSettings(lang: LanguageInfo): SessionSettings {
   if (typeof s.min !== 'number' || typeof s.max !== 'number') return base
   if (!['forward', 'reverse', 'mixed'].includes(s.direction)) s.direction = base.direction
   if (!LENGTH_CHOICES.includes(s.length)) s.length = base.length
-  s.selection = 'shuffled'
+  if (!SELECTIONS.some((x) => x.value === s.selection)) s.selection = base.selection
   s.starredOnly = s.starredOnly === true
   s.min = clampLevel(s.min, lang)
   s.max = clampLevel(s.max, lang)

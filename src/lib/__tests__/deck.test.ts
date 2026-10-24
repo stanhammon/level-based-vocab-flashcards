@@ -85,6 +85,10 @@ describe('plannedCount', () => {
     expect(plannedCount(263, 'all')).toBe(263)
     expect(plannedCount(263, 'endless')).toBeNull()
   })
+  it('does not cap fixed lengths when repeats are allowed', () => {
+    expect(plannedCount(12, 50, true)).toBe(50)
+    expect(plannedCount(12, 'all', true)).toBe(12)
+  })
 })
 
 describe('promptIsForeign', () => {

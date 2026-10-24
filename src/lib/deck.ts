@@ -66,11 +66,14 @@ export function refill(cards: readonly Card[], lastId: string | undefined, rng: 
   return deck
 }
 
-/** Number of cards a session will show, or null for endless. */
-export function plannedCount(available: number, length: SessionLength): number | null {
+/**
+ * Number of cards a session will show, or null for endless. A fixed length is
+ * capped at the words in range unless the card order allows repeats.
+ */
+export function plannedCount(available: number, length: SessionLength, repeats = false): number | null {
   if (length === 'endless') return null
   if (length === 'all') return available
-  return Math.min(length, available)
+  return repeats ? length : Math.min(length, available)
 }
 
 /** Which side is the prompt for one card: true = foreign word on the front. */

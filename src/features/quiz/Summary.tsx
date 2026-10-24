@@ -6,7 +6,9 @@ import type { Language } from '@/lib/words'
 import { Link, useNavigate } from 'react-router'
 import type { Graded, QuizState } from './QuizPage'
 
-/** End-of-session screen (SPEC §6.4). */
+const ORDER_NAMES = { shuffled: 'Shuffled', random: 'Random', weighted: 'Weighted', srs: 'Spaced repetition' } as const
+
+/** End-of-session screen (SPEC §6.5). */
 export function Summary({
   language,
   settings,
@@ -43,7 +45,7 @@ export function Summary({
   const restart = (state: QuizState) => navigate(`/${info.code}/quiz`, { replace: true, state })
   const context = drill
     ? 'Missed-word drill'
-    : `Levels ${settings.min}–${settings.max} · ${labels[settings.direction]} · ${settings.starredOnly ? 'Starred' : 'Shuffled'}`
+    : `Levels ${settings.min}–${settings.max} · ${labels[settings.direction]} · ${settings.starredOnly ? 'Starred · ' : ''}${ORDER_NAMES[settings.selection]}`
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4.5 px-5 pt-7 pb-6">
