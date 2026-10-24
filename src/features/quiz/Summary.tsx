@@ -1,8 +1,9 @@
 import { btnAccent, btnPrimary } from '@/components/styles'
 import { directionLabels } from '@/lib/labels'
+import { useProgress } from '@/lib/progressContext'
 import type { SessionSettings } from '@/lib/settings'
 import type { Language } from '@/lib/words'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import type { Graded, QuizState } from './QuizPage'
 
 /** End-of-session screen (SPEC §6.4). */
@@ -18,6 +19,7 @@ export function Summary({
   results: Graded[]
 }) {
   const navigate = useNavigate()
+  const { userId } = useProgress()
   const { info } = language
   const total = results.length
   const got = results.filter((r) => r.got).length
@@ -107,13 +109,20 @@ export function Summary({
             Same settings again
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => navigate(`/${info.code}`)}
-          className="h-12 text-base font-bold text-ink underline"
-        >
-          Change settings
-        </button>
+        <div className="flex justify-center gap-8">
+          <button
+            type="button"
+            onClick={() => navigate(`/${info.code}`)}
+            className="h-12 text-base font-bold text-ink underline"
+          >
+            Change settings
+          </button>
+          {userId && (
+            <Link to={`/${info.code}/progress`} className="flex h-12 items-center text-base font-bold text-ink">
+              See your progress
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   )

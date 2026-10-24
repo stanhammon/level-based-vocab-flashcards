@@ -190,6 +190,39 @@ function Progress({ language }: { language: Language }) {
         </section>
 
         <section className={panel}>
+          <SectionLabel>Recent sessions</SectionLabel>
+          {data.sessions.length === 0 ? (
+            <p className="m-0 py-2 text-muted">Finished sessions will show up here.</p>
+          ) : (
+            <ul className="m-0 mt-1 list-none p-0">
+              {data.sessions.map((r, i) => {
+                const pct = r.shown ? Math.round((r.correct / r.shown) * 100) : 0
+                return (
+                  <li key={r.id} className={`flex items-center gap-3 py-2.5 ${i < data.sessions.length - 1 ? 'border-b border-track' : ''}`}>
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="font-bold">
+                        {new Date(r.ended_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ·{' '}
+                        {r.selection === 'drill' ? 'Drill' : `Levels ${r.min_level}–${r.max_level}`}
+                      </span>
+                      <span className="text-sm text-muted">
+                        {labels[r.direction as keyof typeof labels] ?? r.direction} · {r.correct}/{r.shown}
+                      </span>
+                    </span>
+                    {/* Inline bar: accuracy at a glance down the list. */}
+                    <span className="flex w-24 shrink-0 items-center gap-2" aria-label={`${pct}% correct`}>
+                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-track">
+                        <span className="block h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
+                      </span>
+                      <span className="w-9 text-right text-sm font-bold">{pct}%</span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section className={panel}>
           <SectionLabel>Starred words</SectionLabel>
           {starredCards.length === 0 ? (
             <p className="m-0 py-2 text-muted">Tap the star on a card to save a word here.</p>
@@ -221,39 +254,6 @@ function Progress({ language }: { language: Language }) {
                 Drill starred words
               </button>
             </>
-          )}
-        </section>
-
-        <section className={panel}>
-          <SectionLabel>Recent sessions</SectionLabel>
-          {data.sessions.length === 0 ? (
-            <p className="m-0 py-2 text-muted">Finished sessions will show up here.</p>
-          ) : (
-            <ul className="m-0 mt-1 list-none p-0">
-              {data.sessions.map((r, i) => {
-                const pct = r.shown ? Math.round((r.correct / r.shown) * 100) : 0
-                return (
-                  <li key={r.id} className={`flex items-center gap-3 py-2.5 ${i < data.sessions.length - 1 ? 'border-b border-track' : ''}`}>
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="font-bold">
-                        {new Date(r.ended_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ·{' '}
-                        {r.selection === 'drill' ? 'Drill' : `Levels ${r.min_level}–${r.max_level}`}
-                      </span>
-                      <span className="text-sm text-muted">
-                        {labels[r.direction as keyof typeof labels] ?? r.direction} · {r.correct}/{r.shown}
-                      </span>
-                    </span>
-                    {/* Inline bar: accuracy at a glance down the list. */}
-                    <span className="flex w-24 shrink-0 items-center gap-2" aria-label={`${pct}% correct`}>
-                      <span className="h-2 flex-1 overflow-hidden rounded-full bg-track">
-                        <span className="block h-full rounded-full bg-good" style={{ width: `${pct}%` }} />
-                      </span>
-                      <span className="w-9 text-right text-sm font-bold">{pct}%</span>
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
           )}
         </section>
 
