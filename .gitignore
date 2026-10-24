@@ -8,8 +8,10 @@ dist
 !.vscode/extensions.json
 
 # Word lists are third-party content: never commit them (SPEC §3.4).
-# Only the original sample list under data/sample/ is tracked.
-data/*.csv
+# Nothing in data/ is tracked except the original sample list, so backups
+# and other copies (german.csv.bak, …) are covered too.
+data/*
+!data/sample/
 public/data/
 
 .vercel

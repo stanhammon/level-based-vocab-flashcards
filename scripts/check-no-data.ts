@@ -8,8 +8,13 @@ const staged = process.argv.includes('--staged')
 const args = staged ? ['diff', '--cached', '--name-only', '--diff-filter=ACMR'] : ['ls-files']
 const files = execFileSync('git', args, { encoding: 'utf8' }).split('\n').filter(Boolean)
 
+// Anything in data/ except the sample, any CSV (even renamed, e.g. .csv.bak),
+// and the generated word files.
 const blocked = files.filter(
-  (f) => (/\.csv$/i.test(f) && !f.startsWith('data/sample/')) || f.startsWith('public/data/'),
+  (f) =>
+    (f.startsWith('data/') && !f.startsWith('data/sample/')) ||
+    (/\.csv/i.test(f) && !f.startsWith('data/sample/')) ||
+    f.startsWith('public/data/'),
 )
 if (blocked.length > 0) {
   console.error('Word-list data must not be committed (SPEC §3.4):')

@@ -448,10 +448,13 @@ function FlipCard({
 
   // The front only offers the speaker when it shows the foreign word.
   const topRow = (visible: boolean, canSpeak: boolean) => (
-    <div className="flex h-11 w-full items-center gap-1">
-      <span className="flex flex-1 items-center gap-2 text-sm font-bold text-muted">
-        <LevelTag level={card.level} />
-        {sectionTitle}
+    <div className="flex min-h-11 w-full shrink-0 items-center gap-1">
+      {/* Long section titles wrap onto more lines instead of being cut off. */}
+      <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-muted">
+        <span className="shrink-0">
+          <LevelTag level={card.level} />
+        </span>
+        <span className="min-w-0 leading-snug break-words">{sectionTitle}</span>
       </span>
       {onSpeak && canSpeak && (
         <button

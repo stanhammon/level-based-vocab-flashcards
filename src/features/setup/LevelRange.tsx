@@ -88,7 +88,7 @@ export function LevelRange({ lo, hi, min, max, sections, onChange }: Props) {
               onKeyDown={(e) => e.key === 'Enter' && commit()}
               className={field}
             />
-            <span className="truncate text-sm text-muted">{sections[value] ?? '—'}</span>
+            <span className="text-sm leading-snug break-words text-muted">{sections[value] ?? '—'}</span>
           </div>
         ))}
       </div>
