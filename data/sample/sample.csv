@@ -1,0 +1,21 @@
+spanish word,english translation (short),english translation (full),section number,section title
+hola,hello,"hello, hi",1,Basics
+adiós,goodbye,"goodbye, bye",1,Basics
+sí,yes,yes,1,Basics
+gracias,thank you,"thank you, thanks",1,Basics
+por favor,please,please,1,Basics
+perdón,sorry,"sorry, excuse me, pardon",1,Basics
+buenos días,good morning,"good morning, good day",1,Basics
+uno,one,one,2,Numbers
+dos,two,two,2,Numbers
+tres,three,three,2,Numbers
+cuatro,four,four,2,Numbers
+cinco,five,five,2,Numbers
+diez,ten,ten,2,Numbers
+cien,one hundred,"one hundred, a hundred",2,Numbers
+rojo,red,red,3,Colors
+azul,blue,blue,3,Colors
+verde,green,"green, unripe",3,Colors
+amarillo,yellow,yellow,3,Colors
+blanco,white,"white, blank",3,Colors
+negro,black,black,3,Colors

@@ -1,0 +1,13 @@
+node_modules
+dist
+*.local
+*.log
+.DS_Store
+.vercel
+.vscode/*
+!.vscode/extensions.json
+
+# Word lists are third-party content: never commit them (SPEC §3.4).
+# Only the original sample list under data/sample/ is tracked.
+data/*.csv
+public/data/

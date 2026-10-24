@@ -1,0 +1,7 @@
+# Present so Vercel does NOT fall back to .gitignore, which would drop the
+# word lists from CLI deploys (SPEC §3.4). Do not add data/ here.
+node_modules
+dist
+.git
+.vercel
+public/data
