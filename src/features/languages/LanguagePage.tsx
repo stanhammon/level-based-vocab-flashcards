@@ -1,5 +1,7 @@
 import { ChevronRight, Logo, Page, Status } from '@/components/ui'
+import { useAuth } from '@/lib/authContext'
 import { loadLastLanguage, saveLastLanguage } from '@/lib/settings'
+import { isSupabaseConfigured } from '@/lib/supabase'
 import { useManifest } from '@/lib/words'
 import { Link, Navigate } from 'react-router'
 
@@ -18,6 +20,7 @@ export function HomeRedirect() {
 
 export function LanguagePage() {
   const manifest = useManifest()
+  const { session } = useAuth()
   if (manifest.status === 'loading') return <Status>Loading…</Status>
   if (manifest.status === 'error') return <Status>Couldn't load the word lists. Check your connection and reload.</Status>
 
@@ -62,7 +65,24 @@ export function LanguagePage() {
         </ul>
 
         <div className="flex-1" />
-        <p className="m-0 text-center text-[15px] text-muted">No account needed.</p>
+        {session ? (
+          <p className="m-0 text-center text-[15px] text-muted">
+            Signed in as {session.user.email}. <Link to="/account?from=/languages" className="font-bold text-ink">Account</Link>
+          </p>
+        ) : (
+          <p className="m-0 text-center text-[15px] text-muted">
+            No account needed.
+            {isSupabaseConfigured && (
+              <>
+                {' '}
+                <Link to="/account?from=/languages" className="font-bold text-ink">
+                  Sign in
+                </Link>{' '}
+                to sync progress across devices.
+              </>
+            )}
+          </p>
+        )}
       </div>
     </Page>
   )

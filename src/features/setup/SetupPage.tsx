@@ -2,6 +2,7 @@ import { btnAccent, pill } from '@/components/styles'
 import { ChevronDown, Header, Page, SectionLabel, Status } from '@/components/ui'
 import { inRange, plannedCount } from '@/lib/deck'
 import { directionLabels } from '@/lib/labels'
+import { useProgress, useStarred } from '@/lib/progressContext'
 import { LENGTH_CHOICES, loadSettings, saveLastLanguage, saveSettings, type SessionSettings } from '@/lib/settings'
 import { useLanguage, type Language } from '@/lib/words'
 import { useEffect, useMemo, useState } from 'react'
@@ -11,6 +12,7 @@ import { LevelRange } from './LevelRange'
 export function SetupPage() {
   const { lang } = useParams()
   const language = useLanguage(lang)
+  const { settingsVersion } = useProgress()
   if (language.status === 'loading') return <Status>Loading words…</Status>
   if (language.status === 'missing') {
     return (
@@ -18,7 +20,8 @@ export function SetupPage() {
     )
   }
   if (language.status === 'error') return <Status>Couldn't load the words. Check your connection and reload.</Status>
-  return <Setup key={language.data.info.code} language={language.data} />
+  // Remount when settings arrive from the account so the screen shows them.
+  return <Setup key={`${language.data.info.code}:${settingsVersion}`} language={language.data} />
 }
 
 function Setup({ language }: { language: Language }) {
@@ -28,9 +31,17 @@ function Setup({ language }: { language: Language }) {
   const update = (patch: Partial<SessionSettings>) => setS((prev) => ({ ...prev, ...patch }))
 
   useEffect(() => saveLastLanguage(info.code), [info.code])
-  useEffect(() => saveSettings(info.code, s), [info.code, s])
+  const { userId, pushSettings } = useProgress()
+  const starred = useStarred(info.code)
+  useEffect(() => {
+    saveSettings(info.code, s)
+    pushSettings(info.code, s)
+  }, [info.code, s, pushSettings])
 
-  const available = useMemo(() => inRange(cards, s.min, s.max).length, [cards, s.min, s.max])
+  const ranged = useMemo(() => inRange(cards, s.min, s.max), [cards, s.min, s.max])
+  const starredInRange = useMemo(() => ranged.filter((c) => starred.has(c.id)).length, [ranged, starred])
+  const starredOnly = s.starredOnly && userId !== null
+  const available = starredOnly ? starredInRange : ranged.length
   const planned = plannedCount(available, s.length)
   const labels = directionLabels(info.code)
 
@@ -38,7 +49,14 @@ function Setup({ language }: { language: Language }) {
     <Page>
       <Header languageName={info.name} />
       <main className="flex flex-1 flex-col gap-4 px-5 pt-1 pb-5">
-        <h1 className="m-0 font-display text-[30px] leading-tight font-extrabold tracking-tight">Set up a session</h1>
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="m-0 font-display text-[30px] leading-tight font-extrabold tracking-tight">Set up a session</h1>
+          {userId && (
+            <Link to={`/${info.code}/progress`} className="shrink-0 text-[15px] font-bold text-ink">
+              Progress
+            </Link>
+          )}
+        </div>
         {info.sample && (
           <p className="m-0 rounded-xl bg-miss-soft px-3 py-2 text-sm text-miss-soft-ink">
             This is the built-in sample list. Add real word lists to the data folder and redeploy.
@@ -61,6 +79,21 @@ function Setup({ language }: { language: Language }) {
             onChange={(min, max) => update({ min, max })}
           />
         </section>
+
+        {userId && (starredInRange > 0 || s.starredOnly) && (
+          <label className="flex min-h-11 items-center justify-between gap-3 rounded-[14px] bg-surface px-4 py-2 shadow-[0_1px_2px_rgba(22,33,58,0.08)]">
+            <span className="flex flex-col">
+              <span className="font-bold">Starred words only</span>
+              <span className="text-sm text-muted">{starredInRange.toLocaleString()} starred in this range</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={s.starredOnly}
+              onChange={(e) => update({ starredOnly: e.target.checked })}
+              className="size-6 accent-[var(--good)]"
+            />
+          </label>
+        )}
 
         <section className="flex flex-col gap-2">
           <SectionLabel>Direction</SectionLabel>

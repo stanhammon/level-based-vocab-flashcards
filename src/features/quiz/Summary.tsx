@@ -26,10 +26,22 @@ export function Summary({
   // A card can be shown more than once in endless mode; list each miss once.
   const missed = [...new Map(results.filter((r) => !r.got).map((r) => [r.card.id, r.card])).values()]
 
+  // Mixed sessions: each direction is tracked on its own (SPEC §6.2).
+  const labels = directionLabels(info.code)
+  const split =
+    settings.direction === 'mixed' && total > 0
+      ? ([true, false] as const)
+          .map((foreign) => {
+            const rs = results.filter((r) => r.foreign === foreign)
+            return { label: labels[foreign ? 'forward' : 'reverse'], got: rs.filter((r) => r.got).length, total: rs.length }
+          })
+          .filter((d) => d.total > 0)
+      : []
+
   const restart = (state: QuizState) => navigate(`/${info.code}/quiz`, { replace: true, state })
   const context = drill
     ? 'Missed-word drill'
-    : `Levels ${settings.min}–${settings.max} · ${directionLabels(info.code)[settings.direction]} · Shuffled`
+    : `Levels ${settings.min}–${settings.max} · ${labels[settings.direction]} · ${settings.starredOnly ? 'Starred' : 'Shuffled'}`
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4.5 px-5 pt-7 pb-6">
@@ -54,6 +66,11 @@ export function Summary({
         <span className="text-[15px] text-muted">
           {pct}% · {context}
         </span>
+        {split.length > 0 && (
+          <span className="text-[15px] font-bold">
+            {split.map((d) => `${d.label} ${d.got}/${d.total}`).join(' · ')}
+          </span>
+        )}
       </div>
 
       {missed.length > 0 && (

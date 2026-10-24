@@ -11,6 +11,8 @@ export interface SessionSettings {
   direction: Direction
   selection: Selection
   length: SessionLength
+  /** Only starred words (signed-in users). */
+  starredOnly: boolean
 }
 
 export const LENGTH_CHOICES: SessionLength[] = [10, 20, 50, 'all', 'endless']
@@ -22,6 +24,7 @@ export function defaultSettings(lang: LanguageInfo): SessionSettings {
     direction: 'forward',
     selection: 'shuffled',
     length: 20,
+    starredOnly: false,
   }
 }
 
@@ -37,6 +40,7 @@ export function loadSettings(lang: LanguageInfo): SessionSettings {
   if (!['forward', 'reverse', 'mixed'].includes(s.direction)) s.direction = base.direction
   if (!LENGTH_CHOICES.includes(s.length)) s.length = base.length
   s.selection = 'shuffled'
+  s.starredOnly = s.starredOnly === true
   s.min = clampLevel(s.min, lang)
   s.max = clampLevel(s.max, lang)
   return s

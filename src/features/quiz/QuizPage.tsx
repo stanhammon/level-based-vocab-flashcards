@@ -1,8 +1,10 @@
-import { CheckIcon, CloseIcon, LevelTag, MissIcon, Status, UndoIcon } from '@/components/ui'
+import { CheckIcon, CloseIcon, LevelTag, MissIcon, StarIcon, Status, UndoIcon } from '@/components/ui'
 import { inRange, plannedCount, promptIsForeign, refill, startQueue, type Card, type SessionLength } from '@/lib/deck'
+import { useProgress, useStarred } from '@/lib/progressContext'
 import { loadSettings, type SessionSettings } from '@/lib/settings'
+import type { GradeEvent, StatDirection } from '@/lib/stats'
 import { useLanguage, type Language } from '@/lib/words'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { Summary } from './Summary'
 
@@ -10,16 +12,29 @@ import { Summary } from './Summary'
 export interface QuizState {
   start: number
   drill?: string[]
+  /** Quiz in this direction instead of the saved setting (most-missed drills). */
+  direction?: StatDirection
 }
 
 export function QuizPage() {
   const { lang } = useParams()
   const location = useLocation()
   const language = useLanguage(lang)
+  const { userId, starred, loadStarred } = useProgress()
+  const info = language.status === 'ready' ? language.data.info : null
+  // A starred-only session can't start until the stars have loaded.
+  const needStars = info !== null && userId !== null && loadSettings(info).starredOnly
+  const code = info?.code
+
+  useEffect(() => {
+    if (needStars && code) loadStarred(code)
+  }, [needStars, code, loadStarred])
+
   if (language.status === 'loading') return <Status>Loading words…</Status>
   if (language.status !== 'ready') {
     return <Status action={<Link to="/languages">Pick a language</Link>}>Couldn't load that language.</Status>
   }
+  if (needStars && !starred[language.data.info.code]) return <Status>Loading starred words…</Status>
   // A new key (from Start, Again or Drill) starts a fresh session.
   return <Quiz key={location.key} language={language.data} state={location.state as QuizState | null} />
 }
@@ -30,18 +45,31 @@ export interface Shown {
 }
 export interface Graded extends Shown {
   got: boolean
+  at: number
 }
+
+const toEvent = (language: string, r: Graded): GradeEvent => ({
+  cardId: r.card.id,
+  direction: r.foreign ? 'forward' : 'reverse',
+  language,
+  got: r.got,
+  at: r.at,
+})
 
 function Quiz({ language, state }: { language: Language; state: QuizState | null }) {
   const navigate = useNavigate()
   const { info } = language
+  const { userId, record, saveSession, toggleStar } = useProgress()
+  const starred = useStarred(info.code)
 
   const [session] = useState(() => {
-    const settings: SessionSettings = loadSettings(info)
+    const saved: SessionSettings = loadSettings(info)
+    const settings = state?.direction ? { ...saved, direction: state.direction } : saved
     const drill = state?.drill ? new Set(state.drill) : null
-    const pool = drill ? language.cards.filter((c) => drill.has(c.id)) : inRange(language.cards, settings.min, settings.max)
+    let pool = drill ? language.cards.filter((c) => drill.has(c.id)) : inRange(language.cards, settings.min, settings.max)
+    if (!drill && settings.starredOnly && userId) pool = pool.filter((c) => starred.has(c.id))
     const length: SessionLength = drill ? 'all' : settings.length
-    return { settings, pool, length, drill: drill !== null }
+    return { settings, pool, length, drill: drill !== null, id: crypto.randomUUID(), startedAt: new Date() }
   })
   const draw = useCallback(
     (cards: Card[]): Shown[] => cards.map((card) => ({ card, foreign: promptIsForeign(session.settings.direction) })),
@@ -53,38 +81,84 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
   const [flipped, setFlipped] = useState(false)
   const [done, setDone] = useState(false)
 
+  // Grades are saved one step behind, so the single-level Undo never has to
+  // reverse a saved result. Whatever is left is saved when the session ends.
+  const [savedCount, setSavedCount] = useState(0)
+  const saveGrades = useCallback(
+    (list: Graded[], from: number, upTo: number) => {
+      if (upTo > from) record(list.slice(from, upTo).map((r) => toEvent(info.code, r)))
+      setSavedCount(Math.max(from, upTo))
+    },
+    [record, info.code],
+  )
+  // Leaving mid-session (back button, Change settings) still saves the grades.
+  const latest = useRef({ results, savedCount, record })
+  useEffect(() => {
+    latest.current = { results, savedCount, record }
+  }, [results, savedCount, record])
+  useEffect(
+    () => () => {
+      const { results: rs, savedCount: n, record: rec } = latest.current
+      if (rs.length > n) rec(rs.slice(n).map((r) => toEvent(info.code, r)))
+    },
+    [info.code],
+  )
+
   const index = results.length
   const current = queue[index]
   const planned = plannedCount(session.pool.length, session.length)
   const got = results.filter((r) => r.got).length
 
+  const finish = useCallback(
+    (final: Graded[]) => {
+      setDone(true)
+      saveGrades(final, savedCount, final.length)
+      if (final.length === 0) return
+      const correct = final.filter((r) => r.got).length
+      saveSession({
+        id: session.id,
+        language: info.code,
+        min_level: session.settings.min,
+        max_level: session.settings.max,
+        direction: session.settings.direction,
+        selection: session.drill ? 'drill' : session.settings.starredOnly ? 'starred' : session.settings.selection,
+        planned_length: typeof session.length === 'number' ? session.length : null,
+        shown: final.length,
+        correct,
+        missed: final.length - correct,
+        started_at: session.startedAt.toISOString(),
+        ended_at: new Date().toISOString(),
+      })
+    },
+    [saveSession, session, info.code, saveGrades, savedCount],
+  )
+
   const grade = useCallback(
     (ok: boolean) => {
       if (!flipped || !current) return
-      const next = [...results, { ...current, got: ok }]
+      const next = [...results, { ...current, got: ok, at: Date.now() }]
       setResults(next)
       setFlipped(false)
-      if (next.length >= queue.length) {
-        if (session.length === 'endless') setQueue((q) => [...q, ...draw(refill(session.pool, current.card.id))])
-        else setDone(true)
-      }
+      if (next.length >= queue.length && session.length !== 'endless') return finish(next)
+      saveGrades(next, savedCount, next.length - 1)
+      if (next.length >= queue.length) setQueue((q) => [...q, ...draw(refill(session.pool, current.card.id))])
     },
-    [flipped, current, results, queue.length, session, draw],
+    [flipped, current, results, queue.length, session, draw, saveGrades, savedCount, finish],
   )
 
+  const canUndo = results.length > savedCount
   const undo = useCallback(() => {
-    if (results.length === 0) return
+    if (results.length <= savedCount) return
     setResults(results.slice(0, -1))
     setFlipped(true)
-    setDone(false)
-  }, [results])
+  }, [results, savedCount])
 
   const end = useCallback(() => {
-    if (results.length > 0) setDone(true)
+    if (results.length > 0) finish(results)
     else navigate(`/${info.code}`)
-  }, [results.length, navigate, info.code])
+  }, [results, finish, navigate, info.code])
 
-  // Keyboard shortcuts (SPEC §6.5).
+  // Keyboard shortcuts (SPEC §6.6).
   useEffect(() => {
     if (done) return
     const onKey = (e: KeyboardEvent) => {
@@ -96,15 +170,23 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
       else if (k === 'arrowright' || k === 'g') grade(true)
       else if (k === 'arrowleft' || k === 'm') grade(false)
       else if (k === 'z') undo()
+      else if (k === '*' && userId && current) toggleStar(info.code, current.card.id)
       else if (k === 'escape') end()
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [done, flipped, grade, undo, end])
+  }, [done, flipped, grade, undo, end, userId, current, toggleStar, info.code])
 
   if (done || !current) {
+    if (session.pool.length === 0) {
+      return (
+        <Status action={<Link to={`/${info.code}`}>Change settings</Link>}>
+          No words to quiz. With “Starred words only” on, star some words first.
+        </Status>
+      )
+    }
     return <Summary language={language} settings={session.settings} drill={session.drill} results={results} />
   }
 
@@ -153,6 +235,7 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
         sectionTitle={language.sections[current.card.level] ?? ''}
         flipped={flipped}
         onFlip={() => setFlipped(true)}
+        star={userId ? { on: starred.has(current.card.id), toggle: () => toggleStar(info.code, current.card.id) } : null}
       />
 
       <div className="flex items-center gap-3">
@@ -182,7 +265,7 @@ function Quiz({ language, state }: { language: Language; state: QuizState | null
             Flip
           </button>
         )}
-        {results.length > 0 && (
+        {canUndo && (
           <button
             type="button"
             onClick={undo}
@@ -207,6 +290,7 @@ function FlipCard({
   sectionTitle,
   flipped,
   onFlip,
+  star,
 }: {
   shown: Shown
   languageName: string
@@ -214,6 +298,7 @@ function FlipCard({
   sectionTitle: string
   flipped: boolean
   onFlip: () => void
+  star: { on: boolean; toggle: () => void } | null
 }) {
   const { card, foreign } = shown
   const [more, setMore] = useState(false)
@@ -223,20 +308,38 @@ function FlipCard({
   const promptLang = foreign ? langCode : 'en'
   const answerLang = foreign ? 'en' : langCode
 
-  const tag = (
-    <span className="flex items-center gap-2 text-sm font-bold text-muted">
-      <LevelTag level={card.level} />
-      {sectionTitle}
-    </span>
+  const topRow = (visible: boolean) => (
+    <div className="flex h-11 w-full items-center justify-between">
+      <span className="flex items-center gap-2 text-sm font-bold text-muted">
+        <LevelTag level={card.level} />
+        {sectionTitle}
+      </span>
+      {star && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            star.toggle()
+          }}
+          aria-pressed={star.on}
+          aria-label={star.on ? 'Unstar this word' : 'Star this word'}
+          tabIndex={visible ? 0 : -1}
+          className="flex size-11 items-center justify-center rounded-full bg-chip text-ink"
+        >
+          <StarIcon size={22} filled={star.on} />
+        </button>
+      )}
+    </div>
   )
   const face = 'flip-face flex flex-col rounded-3xl border-2 border-card-border bg-surface p-[18px] shadow-[0_6px_0_var(--shadow)]'
 
   return (
     <div className="flip min-h-0 flex-1">
       <div className={`flip-inner ${flipped ? 'flipped' : ''}`}>
-        <button type="button" onClick={onFlip} className={`${face} text-left text-ink`} aria-hidden={flipped} tabIndex={flipped ? -1 : 0}>
-          <span className="flex h-11 w-full items-center">{tag}</span>
-          <span className="flex w-full flex-1 flex-col items-center justify-center gap-2.5 overflow-hidden">
+        {/* Tapping anywhere on the front flips it; keyboard users have the Flip button and Space. */}
+        <div onClick={onFlip} className={`${face} cursor-pointer text-ink`} aria-hidden={flipped}>
+          {topRow(!flipped)}
+          <div className="flex w-full flex-1 flex-col items-center justify-center gap-2.5 overflow-hidden">
             <span className="text-[13px] font-bold tracking-[1px] text-muted uppercase">
               {foreign ? languageName : 'English'}
             </span>
@@ -248,12 +351,12 @@ function FlipCard({
             >
               {prompt}
             </span>
-          </span>
+          </div>
           <span className="w-full text-center text-sm text-muted">Tap the card to flip</span>
-        </button>
+        </div>
 
         <div className={`${face} flip-back gap-3.5`} aria-hidden={!flipped} aria-live="polite">
-          <div className="flex h-11 items-center">{tag}</div>
+          {topRow(flipped)}
           <div
             lang={promptLang}
             className="border-b-[1.5px] border-dashed border-track pb-3.5 font-display text-[26px] font-bold break-words"
