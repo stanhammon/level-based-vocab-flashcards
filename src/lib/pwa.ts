@@ -7,7 +7,7 @@ import { registerSW } from 'virtual:pwa-register'
  * reloads the page in the middle of a session.
  */
 
-let updateReady = false
+let state: 'ready' | 'updating' | null = null
 let applyFn: ((reload?: boolean) => Promise<void>) | null = null
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((l) => l())
@@ -15,18 +15,24 @@ const notify = () => listeners.forEach((l) => l())
 export function startPwa() {
   applyFn = registerSW({
     onNeedRefresh() {
-      updateReady = true
+      state = 'ready'
       notify()
     },
   })
 }
 
 export function applyUpdate() {
+  state = 'updating'
+  notify()
   void applyFn?.(true)
+  // The page normally reloads as soon as the new version takes over. Some
+  // browsers don't report that, so reload anyway after a moment.
+  setTimeout(() => window.location.reload(), 3000)
 }
 
 const subscribeUpdate = (l: () => void) => {
   listeners.add(l)
   return () => listeners.delete(l)
 }
-export const useUpdateReady = () => useSyncExternalStore(subscribeUpdate, () => updateReady)
+/** 'ready' when a new version is waiting, 'updating' once Update is pressed. */
+export const useUpdateState = () => useSyncExternalStore(subscribeUpdate, () => state)

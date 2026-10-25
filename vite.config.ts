@@ -39,14 +39,24 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            // Word lists come from the network whenever possible, so an updated
-            // list shows on the next load without an app update; offline (or on a
-            // very slow connection) the last copy is used.
-            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/data/'),
+            // The small language index is checked on every load, so an updated
+            // word list shows without an app update; offline the last copy is used.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname === '/data/languages.json',
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'word-lists',
+              cacheName: 'word-index',
               networkTimeoutSeconds: 5,
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // Word lists are addressed by a content fingerprint (es.json?v=<hash>),
+            // so a saved copy never goes stale: it's used without asking the
+            // server, and a list is downloaded again only when its contents change.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/data/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'word-lists',
               expiration: { maxEntries: 30 },
               cacheableResponse: { statuses: [200] },
             },

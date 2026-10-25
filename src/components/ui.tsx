@@ -2,7 +2,7 @@ import type { ReactNode, SVGProps } from 'react'
 import { useAuth } from '@/lib/authContext'
 import { useProgress } from '@/lib/progressContext'
 import { useOnline } from '@/lib/online'
-import { applyUpdate, useUpdateReady } from '@/lib/pwa'
+import { applyUpdate, useUpdateState } from '@/lib/pwa'
 import { isSupabaseConfigured } from '@/lib/supabase'
 import { Link, useLocation } from 'react-router'
 
@@ -106,9 +106,9 @@ export function Header({ languageName }: { languageName?: string }) {
 /** Offline and update notices, shown under the header (never mid-session). */
 function Notices() {
   const online = useOnline()
-  const updateReady = useUpdateReady()
+  const update = useUpdateState()
   const { userId, pendingCount } = useProgress()
-  if (online && !updateReady) return null
+  if (online && !update) return null
   return (
     <div className="mx-5 mb-1 flex flex-col gap-2" role="status">
       {!online && (
@@ -120,11 +120,16 @@ function Notices() {
               : ' Results sync when you reconnect.')}
         </p>
       )}
-      {updateReady && (
+      {update && (
         <p className="m-0 flex items-center justify-between gap-3 rounded-xl bg-good-soft px-3 py-2 text-sm text-good-soft-ink">
-          A new version is ready.
-          <button type="button" onClick={applyUpdate} className="h-9 shrink-0 rounded-lg bg-good px-3 font-bold text-good-ink">
-            Update
+          {update === 'updating' ? 'Updating…' : 'A new version is ready.'}
+          <button
+            type="button"
+            onClick={applyUpdate}
+            disabled={update === 'updating'}
+            className="h-9 shrink-0 rounded-lg bg-good px-3 font-bold text-good-ink disabled:opacity-60"
+          >
+            {update === 'updating' ? 'Updating…' : 'Update'}
           </button>
         </p>
       )}
