@@ -9,8 +9,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    // Installable app that quizzes offline (SPEC §8). The app shell and every
-    // language's word file are precached; fonts are cached on first use.
+    // Installable app that quizzes offline (SPEC §8). The app shell is
+    // precached; word lists and fonts are cached as they're fetched.
     VitePWA({
       // A new version waits until the person reloads from the update banner,
       // so a deploy never reloads the page in the middle of a session.
@@ -33,14 +33,24 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,json}'],
-        // Word files are requested as /data/es.json?v=<hash>; match the precached copy.
-        ignoreURLParametersMatching: [/^v$/],
-        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/data\//],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
+          {
+            // Word lists come from the network whenever possible, so an updated
+            // list shows on the next load without an app update; offline (or on a
+            // very slow connection) the last copy is used.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith('/data/'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'word-lists',
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
           {
             urlPattern: ({ url }) => url.origin === 'https://fonts.googleapis.com',
             handler: 'StaleWhileRevalidate',

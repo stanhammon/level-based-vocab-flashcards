@@ -21,11 +21,27 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 export function getManifest(): Promise<Manifest> {
-  manifestPromise ??= getJson<Manifest>('/data/languages.json').catch((e: unknown) => {
-    manifestPromise = null
-    throw e
-  })
+  manifestPromise ??= getJson<Manifest>('/data/languages.json')
+    .then((m) => {
+      warmOfflineCache(m)
+      return m
+    })
+    .catch((e: unknown) => {
+      manifestPromise = null
+      throw e
+    })
   return manifestPromise
+}
+
+/**
+ * Fetch every language's word list once in the background, so the service
+ * worker has all of them for offline use, not just the ones opened so far.
+ */
+function warmOfflineCache(m: Manifest) {
+  if (!navigator.onLine || !navigator.serviceWorker?.controller) return
+  setTimeout(() => {
+    for (const l of m.languages) void fetch(l.file).catch(() => {})
+  }, 3000)
 }
 
 export function getLanguage(info: LanguageInfo): Promise<Language> {

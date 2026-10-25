@@ -214,7 +214,7 @@ Fixed-length sessions end on a summary: score, percentage, the list of missed wo
 - **Stack:** Vite + React + TypeScript, Tailwind v4, React Router, TanStack Query, `@supabase/supabase-js`, `vite-plugin-pwa`, `idb-keyval`, `minisearch` (browse search). Same versions as SafeOrder where they overlap.
 - **Env:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, the same values as SafeOrder's.
 - **Code layout:** `src/app` (router, layout), `src/features/{setup,quiz,browse,progress,auth}`, `src/lib` (selection algorithms, storage, supabase, tts, languages). The selection algorithms are pure functions with vitest coverage.
-- **Offline (PWA):** precache the app shell and all `public/data/*.json` (Spanish is roughly 600 KB raw and much smaller gzipped). Quizzing works fully offline. Signed-in grades queue locally and sync later. Sign-in itself requires a connection.
+- **Offline (PWA):** precache the app shell. Word lists (`/data/*.json`) are served network-first: online, an updated list shows on the next load without an app update; offline, the last saved copy is used. All languages' lists are fetched in the background after load so every language works offline. Quizzing works fully offline. Signed-in grades queue locally and sync later. Sign-in itself requires a connection. App code updates wait for the person to tap **Update**, so a deploy never reloads mid-session.
 - **TTS:** `speechSynthesis` with the language's locale. If no matching voice is installed, the speaker buttons are hidden instead of reading the word with the wrong accent.
 - **Visual identity:** its own palette, typography and app icon, distinct from SafeOrder. Light and dark modes. A direction is proposed with a quick mockup at the start of Milestone 1, for approval.
 
