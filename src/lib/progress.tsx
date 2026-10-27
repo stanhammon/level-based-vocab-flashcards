@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAuth } from './authContext'
 import { ProgressContext, type ProgressApi, type SessionRecord } from './progressContext'
-import { saveLastLanguage, saveSettings, type SessionSettings } from './settings'
+import { mergeSettings, saveLastLanguage, saveSettings, type SessionSettings } from './settings'
 import { applyGrade, statKey, type GradeEvent, type Stat, type StatDirection } from './stats'
 import { load, loadAll, remove, save } from './storage'
 import { supabase } from './supabase'
@@ -218,6 +218,16 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   )
 
   // ---- settings sync -----------------------------------------------------------
+  const uploadSettings = useCallback(async () => {
+    if (settingsTimer.current) clearTimeout(settingsTimer.current)
+    settingsTimer.current = null
+    if (!userId) return
+    const { last, byLang } = prefs.current
+    await supabase
+      .from('fc_settings')
+      .upsert({ user_id: userId, last_language: last, prefs: byLang, updated_at: new Date().toISOString() })
+  }, [userId])
+
   useEffect(() => {
     settingsLoaded.current = false
     if (!userId) return
@@ -225,40 +235,46 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     void (async () => {
       const { data, error } = await supabase.from('fc_settings').select('last_language, prefs').maybeSingle()
       if (!live || error) return
-      settingsLoaded.current = true
-      if (data) {
-        const byLang = (data.prefs ?? {}) as Record<string, SessionSettings>
-        for (const [code, s] of Object.entries(byLang)) saveSettings(code, s)
-        if (data.last_language) saveLastLanguage(data.last_language as string)
-        prefs.current = { last: data.last_language as string | null, byLang }
-        setSettingsVersion((v) => v + 1)
-      } else {
-        // First sign-in here: start the account from this device's settings.
-        const byLang = loadAll<SessionSettings>('settings:')
-        const last = load<string | null>('lastLanguage', null)
-        prefs.current = { last, byLang }
-        await supabase.from('fc_settings').upsert({ user_id: userId, last_language: last, prefs: byLang })
+      // Keep whichever copy of each language's settings changed last, so an
+      // older account copy never replaces newer choices made on this device.
+      const account = (data?.prefs ?? {}) as Record<string, SessionSettings>
+      const { merged, fromAccount, upload } = mergeSettings(account, loadAll<SessionSettings>('settings:'))
+      for (const code of fromAccount) saveSettings(code, merged[code] as SessionSettings)
+      let last = load<string | null>('lastLanguage', null)
+      if (!last && data?.last_language) {
+        last = data.last_language as string
+        saveLastLanguage(last)
       }
+      prefs.current = { last, byLang: merged as Record<string, SessionSettings> }
+      settingsLoaded.current = true
+      if (!data || upload) void uploadSettings()
+      if (fromAccount.length > 0) setSettingsVersion((v) => v + 1)
     })()
     return () => {
       live = false
     }
-  }, [userId])
+  }, [userId, uploadSettings])
 
   const pushSettings = useCallback(
     (code: string, s: SessionSettings) => {
+      // Before the account's copy has loaded the change is only on the device;
+      // the merge on load sees that it is newer and uploads it then.
       if (!userId || !settingsLoaded.current) return
       prefs.current = { last: code, byLang: { ...prefs.current.byLang, [code]: s } }
       if (settingsTimer.current) clearTimeout(settingsTimer.current)
-      settingsTimer.current = setTimeout(() => {
-        const { last, byLang } = prefs.current
-        void supabase
-          .from('fc_settings')
-          .upsert({ user_id: userId, last_language: last, prefs: byLang, updated_at: new Date().toISOString() })
-      }, 1500)
+      settingsTimer.current = setTimeout(() => void uploadSettings(), 800)
     },
-    [userId],
+    [userId, uploadSettings],
   )
+
+  // Upload a change made just before the app is closed or switched away from.
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden' && settingsTimer.current) void uploadSettings()
+    }
+    document.addEventListener('visibilitychange', onHide)
+    return () => document.removeEventListener('visibilitychange', onHide)
+  }, [uploadSettings])
 
   // ---- stats --------------------------------------------------------------------
   const loadStats = useCallback(

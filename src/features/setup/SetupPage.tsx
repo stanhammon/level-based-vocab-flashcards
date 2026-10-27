@@ -30,15 +30,18 @@ function Setup({ language }: { language: Language }) {
   const { info, sections, cards } = language
   const navigate = useNavigate()
   const [s, setS] = useState<SessionSettings>(() => loadSettings(info))
-  const update = (patch: Partial<SessionSettings>) => setS((prev) => ({ ...prev, ...patch }))
+  const { userId, pushSettings } = useProgress()
+  // Settings are saved only when the person changes them, stamped with the
+  // time, so syncing can tell which copy is newer (SPEC §4.2).
+  const update = (patch: Partial<SessionSettings>) => {
+    const next = { ...s, ...patch, updatedAt: Date.now() }
+    setS(next)
+    saveSettings(info.code, next)
+    pushSettings(info.code, next)
+  }
 
   useEffect(() => saveLastLanguage(info.code), [info.code])
-  const { userId, pushSettings } = useProgress()
   const starred = useStarred(info.code)
-  useEffect(() => {
-    saveSettings(info.code, s)
-    pushSettings(info.code, s)
-  }, [info.code, s, pushSettings])
 
   const ranged = useMemo(() => inRange(cards, s.min, s.max), [cards, s.min, s.max])
   const starredInRange = useMemo(() => ranged.filter((c) => starred.has(c.id)).length, [ranged, starred])

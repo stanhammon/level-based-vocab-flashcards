@@ -11,6 +11,8 @@ export interface SessionSettings {
   length: SessionLength
   /** Only starred words (signed-in users). */
   starredOnly: boolean
+  /** When the person last changed these settings (ms); decides which copy wins when syncing. */
+  updatedAt: number
 }
 
 export const LENGTH_CHOICES: SessionLength[] = [10, 20, 50, 'all', 'endless']
@@ -23,6 +25,7 @@ export function defaultSettings(lang: LanguageInfo): SessionSettings {
     selection: 'shuffled',
     length: 20,
     starredOnly: false,
+    updatedAt: 0,
   }
 }
 
@@ -39,6 +42,7 @@ export function loadSettings(lang: LanguageInfo): SessionSettings {
   if (!LENGTH_CHOICES.includes(s.length)) s.length = base.length
   if (!SELECTIONS.some((x) => x.value === s.selection)) s.selection = base.selection
   s.starredOnly = s.starredOnly === true
+  if (typeof s.updatedAt !== 'number') s.updatedAt = 0
   s.min = clampLevel(s.min, lang)
   s.max = clampLevel(s.max, lang)
   return s
@@ -46,6 +50,41 @@ export function loadSettings(lang: LanguageInfo): SessionSettings {
 
 export function saveSettings(code: string, s: SessionSettings): void {
   save(`settings:${code}`, s)
+}
+
+/**
+ * Merge account and device settings per language, keeping whichever copy was
+ * changed more recently (SPEC §4.2). Returns the merged settings, the
+ * languages whose account copy replaced the device's, and whether the account
+ * needs the device's newer copies.
+ */
+export function mergeSettings(
+  account: Record<string, Partial<SessionSettings>>,
+  device: Record<string, Partial<SessionSettings>>,
+): {
+  merged: Record<string, Partial<SessionSettings>>
+  fromAccount: string[]
+  upload: boolean
+} {
+  const merged: Record<string, Partial<SessionSettings>> = {}
+  const fromAccount: string[] = []
+  let upload = false
+  for (const code of new Set([...Object.keys(account), ...Object.keys(device)])) {
+    const a = account[code]
+    const d = device[code]
+    const aAt = a?.updatedAt ?? 0
+    const dAt = d?.updatedAt ?? 0
+    if (a && (!d || aAt > dAt)) {
+      merged[code] = a
+      fromAccount.push(code)
+    } else if (d) {
+      merged[code] = d
+      // The device copy is newer, or equally old but different (copies saved
+      // before change times existed): the account needs it.
+      if (!a || dAt > aAt || JSON.stringify(a) !== JSON.stringify(d)) upload = true
+    }
+  }
+  return { merged, fromAccount, upload }
 }
 
 export const loadLastLanguage = () => load<string | null>('lastLanguage', null)

@@ -95,6 +95,7 @@ If storage is unavailable (e.g. a private window), the app still works with defa
 - SafeOrder's `handle_new_user` trigger also creates a `profiles` row for flashcard-only users. That is harmless: they would only see SafeOrder's onboarding if they ever opened SafeOrder.
 - Sessions do **not** carry over between the two sites (different domains), so each app is signed into separately.
 - On sign-in, device-only stats stay on the device and are not uploaded. From then on, the account's synced data is used.
+- **Settings sync (fixed 2026-10-27):** each language's settings carry the time the person last changed them. When the app opens, the device and account copies are merged per language and the newer one wins; a newer device copy is uploaded. Changes upload 0.8 s after the last edit and immediately when the app is hidden. Settings are saved only when the person changes them, never just by opening the screen.
 
 ### 4.3 Shared Supabase setup (one-time)
 - Add the Vercel URL and `http://localhost:5173` to Auth → URL Configuration → Redirect URLs.
