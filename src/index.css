@@ -98,48 +98,6 @@ select {
   outline: 3px solid var(--accent);
 }
 
-/* Two stacked range inputs make one two-handle slider: only the thumbs take
-   pointer events, so each handle drags its own input. */
-.range-pair {
-  position: relative;
-  height: 44px;
-}
-.range-pair input[type='range'] {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 44px;
-  margin: 0;
-  background: none;
-  pointer-events: none;
-  appearance: none;
-}
-.range-pair input[type='range']::-webkit-slider-thumb {
-  pointer-events: auto;
-  appearance: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 3px solid var(--card-border);
-  background: var(--surface);
-  cursor: grab;
-}
-.range-pair input[type='range']::-moz-range-thumb {
-  pointer-events: auto;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 3px solid var(--card-border);
-  background: var(--surface);
-  cursor: grab;
-}
-.range-pair input.range-max::-webkit-slider-thumb {
-  background: var(--accent);
-}
-.range-pair input.range-max::-moz-range-thumb {
-  background: var(--accent);
-}
-
 /* Card flip. */
 .flip {
   perspective: 1400px;

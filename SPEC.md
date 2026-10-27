@@ -21,7 +21,7 @@ It is built for a small group of people the owner knows. Anyone can quiz without
 | Languages | Chosen on first launch; options come from the CSV files bundled in `data/` (Spanish now, German soon) |
 | Word list maintenance | CSVs are bundled into the build from the local `data/` folder; to add or update a language, drop in the file and redeploy. **The word lists are never committed to git** (§3.4) |
 | Level | = CSV `section number` (Spanish: 1–303); shown with its `section title` |
-| Level selector | Two-handle range slider **plus** editable min/max number fields, labeled e.g. "150 – Right Now" |
+| Level selector | From and To number fields, each with −/+ buttons (one level per press) and its title beside it, plus a search over level titles (changed 2026-10-27; the slider was removed) |
 | Card direction | User picks: foreign → English, English → foreign, or mixed (random per card) |
 | Answer mode | Flip and self-grade: **Got it** / **Missed** |
 | Card selection | User picks: **Shuffled deck (default)**, pure random, weighted toward misses, spaced repetition |
@@ -159,7 +159,7 @@ fc_sessions (
 
 ### 6.1 Setup screen
 1. **Language** (first launch, or when switching from the header). It lists the languages in the manifest, each with its word count.
-2. **Levels:** the range slider and the min/max number fields stay in sync. Each end is labeled with the section number and title. If min > max, the two values are swapped. The screen shows a live count, "312 words in range", and Start is disabled when the count is 0.
+2. **Levels:** From and To fields, each with −/+ buttons that move one level per press (disabled at the first/last level), a typed number applied on Enter or leaving the field, and the level title beside it (long titles wrap). From never passes To: moving one past the other brings it along. Below them, **Find a level by title** searches titles (any order of words, ignoring case and accents; a number matches that level) and lists up to 8 matches, each with **From** and **To** buttons. A live count reads "312 words in range", and Start is disabled when it is 0.
 3. **Direction:** Spanish → English · English → Spanish · Mixed.
 4. **Selection mode:** Shuffled deck (default) · Random · Weighted toward misses · Spaced repetition.
 5. **Length:** 10 · 20 (default) · 50 · All in range · Endless.
